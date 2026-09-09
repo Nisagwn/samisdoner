@@ -98,6 +98,8 @@ export const trTranslations = {
     dineIn: "İçeride Servis (Mevcut)",
     takeaway: "Gel-Al / Paket Servis (Mevcut)",
     noDelivery: "Adrese Teslimat Yok",
+    openNow: "Şu an açık",
+    closedNow: "Şu an kapalı",
   },
   about: {
     tag: "SAMİ´S DÖNER KİMDİR?",
@@ -391,5 +393,19 @@ export const trTranslations = {
       blog: "Duyurular",
       contact: "İletişim",
     },
+  },
+  errors: {
+    notFoundTag: "404",
+    notFoundTitle: "BU SAYFA YOK",
+    notFoundText:
+      "Aradığın sayfa taşınmış ya da hiç var olmamış olabilir. Menü yerinde duruyor.",
+    errorTag: "HATA",
+    errorTitle: "BİR ŞEYLER TERS GİTTİ",
+    errorText:
+      "Sayfa yüklenemedi. Sepetin duruyor — tekrar denemek yeterli olabilir.",
+    retryBtn: "TEKRAR DENE",
+    menuBtn: "MENÜYE GİT",
+    homeBtn: "ANA SAYFA",
+    callHint: "Acelen varsa telefonla sipariş verebilirsin:",
   },
 };

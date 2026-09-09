@@ -107,6 +107,34 @@ export const STATUS_LABELS: Record<OrderStatus, { de: string; tr: string }> = {
 };
 
 /**
+ * Durumun tek başına anlatmadığı şeyi anlatan cümle.
+ *
+ * Şu an yalnızca `EXPIRED` için var ve gerekçesi somut: müşteri ödeme
+ * sayfasında sekmeyi kapattığında sipariş 31 dakika sonra bakım göreviyle
+ * süresi dolmuş sayılıyor. Ekranda tek başına "Süresi doldu" yazması iki
+ * soruyu cevapsız bırakıyordu — *neden* ve *param gitti mi*. İkincisi
+ * cevapsız kalınca müşteri telefona sarılıyor.
+ *
+ * "Tahsilat yapılmadı" güvenli bir ifade: `EXPIRED` yalnızca hiç ödeme
+ * alınmamış siparişe uygulanır. Ödemesi alınmış ama bildirimi gecikmiş sipariş
+ * bakım görevinde bilinçli olarak atlanır (bkz. lib/orders/reconcile.ts) ve
+ * `PENDING_PAYMENT`'ta bekletilir.
+ *
+ * Aynı metin hem takip sayfasında hem hesap listesinde kullanılır: iki yerde
+ * iki farklı açıklama, müşterinin hangisine inanacağını bilememesi demek.
+ */
+export const STATUS_HINTS: Partial<Record<OrderStatus, { de: string; tr: string }>> = {
+  EXPIRED: {
+    de:
+      "Die Zahlung wurde nicht abgeschlossen, deshalb ist diese Bestellung abgelaufen. " +
+      "Es wurde nichts abgebucht — Sie können jederzeit neu bestellen.",
+    tr:
+      "Ödeme tamamlanmadığı için bu siparişin süresi doldu. " +
+      "Hesabınızdan hiçbir tahsilat yapılmadı — dilediğiniz zaman yeniden sipariş verebilirsiniz.",
+  },
+};
+
+/**
  * Panelde gösterilen durum adları.
  *
  * Müşteri "Hazırlanıyor" görür; onun için doğru olan budur, yemeği o sırada

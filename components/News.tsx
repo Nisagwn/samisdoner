@@ -1,9 +1,15 @@
-"use client";
+import { getTranslations } from "@/lib/i18n/server";
 
-import { useLanguage } from "@/lib/i18n/LanguageContext";
-
-export default function News() {
-  const { t } = useLanguage();
+/*
+ * Sunucu bileşeni.
+ *
+ * Bu bölüm yalnızca çeviri okumak için `"use client"` yazılmıştı: hiçbir
+ * durumu, olayı ya da tarayıcı API'si yok — düz biçimlendirme. Bedeli, iki
+ * dilin tamamının bu bölümü içeren her sayfaya paket olarak gitmesiydi.
+ * Metin artık sunucuda çözülüyor (`lib/i18n/server.ts`).
+ */
+export default async function News() {
+  const { t } = getTranslations();
 
   return (
     <section id="blog" className="relative overflow-hidden bg-void py-24 md:py-32 border-t border-line">

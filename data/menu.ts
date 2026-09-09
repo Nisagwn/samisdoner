@@ -5,11 +5,8 @@ import type { BuilderGroup } from "@/lib/admin/types";
  *
  * Buradaki değerler yalnızca depo (`data/store/catalog.json`) ilk kez
  * oluşturulurken kullanılır. Sonrasında geçerli olan tek kaynak katalogtur:
- * ek ücretler admin panelinden (/admin/builder) değiştirilir ve yapılandırıcı,
+ * ek ücretler admin panelinden (/admin/pricing) değiştirilir ve yapılandırıcı,
  * sepet ve sipariş toplamı o değerleri kullanır.
- *
- * NOT: Aşağıdaki ek ücretler işletmenin gerçek zamları ile teyit edilmelidir;
- * taban fiyat zaten katalogdaki gerçek üründen okunur.
  */
 export const BUILDER_GROUPS_SEED: BuilderGroup[] = [
   {

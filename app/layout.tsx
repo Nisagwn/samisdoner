@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import { Unbounded, JetBrains_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import SmoothScroll from "@/components/SmoothScroll";
-import CartDrawer from "@/components/CartDrawer";
+import CartMount from "@/components/CartMount";
 import { CartProvider } from "@/lib/cart";
 import { FavoritesProvider } from "@/lib/account/FavoritesContext";
 import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 import { BUSINESS_INFO } from "@/data/businessInfo";
+import { SITE_URL } from "@/lib/site";
+import { getLanguage } from "@/lib/i18n/server";
 
 const display = Unbounded({
   subsets: ["latin"],
@@ -33,6 +35,21 @@ export const metadata: Metadata = {
   title: "Sami´s Döner // Straßkirchen — Dein Döner, dein Genuss",
   description:
     "Sami´s Döner in Straßkirchen: Frische Zutaten, 4.9 Google Bewertung, leckerer Döner & Spezialsoßen. Straubinger Str. 3, 94342 Straßkirchen.",
+  metadataBase: new URL(SITE_URL),
+  /* Paylaşım önizlemesi. Görselin kendisi `app/opengraph-image.tsx`
+     dosyasından gelir; burada yalnızca onu çevreleyen metin var.
+     `manifest` yazılmaz — `app/manifest.ts` bağlantıyı kendisi ekler,
+     ikisi birden olsaydı sayfada iki `rel="manifest"` etiketi olurdu. */
+  openGraph: {
+    type: "website",
+    locale: "de_DE",
+    siteName: BUSINESS_INFO.name,
+    title: "Sami´s Döner // Straßkirchen — Dein Döner, dein Genuss",
+    description:
+      "Frisch vom Drehspieß in Straßkirchen. Speisekarte ansehen und direkt online bestellen.",
+    url: SITE_URL,
+  },
+  twitter: { card: "summary_large_image" },
 };
 
 const jsonLd = {
@@ -82,8 +99,13 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  /* Dil çerezden okunur ve hem `<html lang>` hem sağlayıcının başlangıç
+     değeri olur; böylece sunucu ile istemci ilk çizimde aynı dili kullanır.
+     Metnin çoğu artık sunucu bileşenlerinde çözülüyor — bkz. lib/i18n/server.ts. */
+  const lang = getLanguage();
+
   return (
-    <html lang="de" className={`${display.variable} ${mono.variable} ${body.variable}`}>
+    <html lang={lang} className={`${display.variable} ${mono.variable} ${body.variable}`}>
       <head>
         <script
           type="application/ld+json"
@@ -92,14 +114,15 @@ export default function RootLayout({
       </head>
       <body>
         <div className="grain-overlay" />
-        <LanguageProvider>
+        <LanguageProvider initialLang={lang}>
           <CartProvider>
             {/* Favoriler sepetin İÇİNDE: kalp düğmesi menü satırında sepete
                 ekleme düğmesinin yanında duruyor, ikisi aynı ağaçta olmalı.
                 Oturum yoksa sağlayıcı kapalı kalır ve hiçbir şey çizmez. */}
             <FavoritesProvider>
               <SmoothScroll>{children}</SmoothScroll>
-              <CartDrawer />
+              {/* Sepet çekmecesi panelde çizilmez; bkz. components/CartMount.tsx. */}
+              <CartMount />
             </FavoritesProvider>
           </CartProvider>
         </LanguageProvider>

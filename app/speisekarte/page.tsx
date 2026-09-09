@@ -37,7 +37,7 @@ export default async function SpeisekartePage() {
       <div className="pt-[var(--nav-h)]">
         <Products products={featured} showMenuLink={false} lead />
       </div>
-      <MenuGrid sections={sections} standalone={false} />
+      <MenuGrid sections={sections} />
       <Footer />
     </main>
   );

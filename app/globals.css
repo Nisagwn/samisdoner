@@ -66,14 +66,10 @@ body {
   pointer-events: none;
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 10;
   background-image: url('/assets/noise.png');
   background-size: 256px 256px;
   opacity: 0.10;
-}
-
-.hud-line {
-  border-color: #34291F;
 }
 
 .tag {
@@ -81,11 +77,6 @@ body {
   letter-spacing: 0.15em;
   text-transform: uppercase;
   font-size: 0.68rem;
-}
-
-.text-outline {
-  -webkit-text-stroke: 1px #FFF6E8;
-  color: transparent;
 }
 
 /*
@@ -148,28 +139,6 @@ body {
 
 .kinetic-card:hover {
   transform: translate3d(0, -4px, 0);
-}
-
-.accent-rail {
-  position: relative;
-}
-
-.accent-rail::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: linear-gradient(180deg, #FF3D12, #FFC247, #7BD66F);
-  opacity: 0.9;
-}
-
-@keyframes pulseGlow {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
-.pulse-glow {
-  animation: pulseGlow 2.4s ease-in-out infinite;
-  will-change: opacity;
 }
 
 @keyframes firePulse {
@@ -249,14 +218,6 @@ body {
   animation: heatHaze 5.2s ease-in-out infinite;
   mix-blend-mode: screen;
   will-change: transform, opacity;
-}
-
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-.spin-slow {
-  animation: spin-slow 40s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

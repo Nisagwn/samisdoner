@@ -1,11 +1,29 @@
-"use client";
-
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { getTranslations } from "@/lib/i18n/server";
+import { isOpenNow } from "@/lib/orders/availability";
 import { BUSINESS_INFO } from "@/data/businessInfo";
 
-export default function Locations() {
-  const { lang, t } = useLanguage();
+/*
+ * Konum bölümü — sunucu bileşeni.
+ *
+ * Sunucuda çalışmasının iki karşılığı var. Birincisi metin: iki dilin tamamı
+ * artık tarayıcıya inmiyor. İkincisi ve asıl olanı **açık/kapalı rozeti**:
+ * "şu an açık mıyız" sorusunun cevabı veritabanındaki `OpeningHour` ve
+ * `SpecialClosure` tablolarında. Bileşen istemcide olsaydı bunu ayrı bir
+ * istekle çekmek gerekirdi; burada doğrudan okunuyor.
+ *
+ * Rozet daha önce koda gömülü sabit bir "Bugün Açık (11:00 – 21:00)" metniydi
+ * ve dükkân kapalıyken de "açık" diyordu; o yüzden kaldırılmıştı. Şimdi gerçek
+ * veriyle geri geliyor.
+ *
+ * Durum okunamazsa rozet hiç çizilmez: yanlış bilgi vermektense hiç
+ * vermemek doğrusu, ve bu bölüm ana sayfanın ortasında — veritabanı anlık
+ * düşerse sayfa bu yüzden hata vermemeli.
+ */
+export default async function Locations() {
+  const { lang, t } = getTranslations();
   const isDe = lang === "de";
+
+  const open = await isOpenNow().catch(() => null);
 
   return (
     <section id="filialen" className="relative overflow-hidden bg-char py-24 md:py-32 border-t border-line">
@@ -34,9 +52,24 @@ export default function Locations() {
             >
               {t.locations.callBtn}: {BUSINESS_INFO.phone}
             </a>
-            <span className="tag border border-line px-4 py-3.5 text-amber bg-void/60">
+            <span className="tag inline-flex min-h-[44px] items-center border border-line bg-void/60 px-4 text-amber">
               {BUSINESS_INFO.rating} / 5.0 ★ ({BUSINESS_INFO.reviewCount} {isDe ? "Bewertungen" : "Yorum"})
             </span>
+            {open !== null && (
+              <span
+                className={`tag inline-flex min-h-[44px] items-center gap-2 border px-4 ${
+                  open
+                    ? "border-herb/60 bg-herb/10 text-herb"
+                    : "border-flame/60 bg-flame/10 text-flame"
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className={`h-2 w-2 rounded-full ${open ? "bg-herb" : "bg-flame"}`}
+                />
+                {open ? t.locations.openNow : t.locations.closedNow}
+              </span>
+            )}
           </div>
         </div>
 
@@ -73,10 +106,10 @@ export default function Locations() {
           {/*
             Çalışma saatleri.
 
-            Buradaki sabit "Bugün Açık (11:00 – 21:00)" rozeti kaldırıldı: değer
-            koda gömülüydü ve dükkân kapalıyken bile "açık" diyordu. Gerçek bir
-            açık/kapalı göstergesi sunucudaki OpeningHour tablosunu okumak
-            zorunda; o gelene kadar yanlış bilgi göstermemek doğrusu.
+            Buradaki liste haftalık takvimdir (sabit, basılı menüyle aynı);
+            "şu anda açık mıyız" sorusunun cevabı ise yukarıdaki rozettedir ve
+            veritabanından gelir. İkisi ayrı şeyler: özel kapanış günlerinde
+            takvim değişmez ama rozet kapalı der.
           */}
           <div className="border border-line bg-void/80 p-8">
             <h3 className="font-display font-bold text-2xl text-bone mb-6 pb-4 border-b border-line">

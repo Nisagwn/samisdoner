@@ -33,7 +33,6 @@ const config: Config = {
         "flame-gradient": "linear-gradient(135deg, #FF4D00 0%, #FF7A00 55%, #FFB347 100%)",
       },
       boxShadow: {
-        "flame-glow": "0 0 60px -10px rgba(255,77,0,0.45)",
         "ember-card": "0 18px 70px -42px rgba(255,61,18,0.9)",
       },
       letterSpacing: {

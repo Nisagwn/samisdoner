@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Sami´s Döner">
+  <!--
+    Sekme simgesi.
+
+    Marka işareti "SAMİ´S // DÖNER" içindeki eğik çift çizgidir; 16 pikselde
+    okunabilen tek parça budur. Harf koymak denendiğinde tam bu boyutta lekeye
+    dönüşüyordu. Zemin sitenin `void` rengi, çizgiler `flame`→`amber` geçişi.
+  -->
+  <rect width="64" height="64" fill="#070604"/>
+  <defs>
+    <linearGradient id="f" x1="0" y1="64" x2="64" y2="0">
+      <stop offset="0" stop-color="#FF3D12"/>
+      <stop offset="1" stop-color="#FFC247"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#f)">
+    <path d="M22 8 L34 8 L26 56 L14 56 Z"/>
+    <path d="M42 8 L54 8 L46 56 L34 56 Z"/>
+  </g>
+</svg>

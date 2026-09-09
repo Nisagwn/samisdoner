@@ -23,6 +23,8 @@ export type AccountOrder = {
   orderNo: string;
   createdAt: string;
   statusLabel: string;
+  /** Durumun kendisi yetmediğinde açıklaması; bkz. lib/orders/status.ts. */
+  statusHint: string | null;
   /**
    * Siparişin akışı sürüyor mu (müşteri gözünden).
    *
@@ -162,6 +164,16 @@ export function OrderCard({
         {order.createdAt} ·{" "}
         <span className={live ? "text-amber" : undefined}>{order.statusLabel}</span>
       </p>
+
+      {/* Süresi dolan sipariş için "param gitti mi?" sorusu burada, listede
+          cevaplanır — müşteri bunun için takip bağlantısını açmak zorunda
+          kalmamalı. Metin iptal sebebiyle aynı biçimde ama farklı tonda:
+          bu bir ret değil, kendiliğinden kapanmış bir sipariş. */}
+      {order.statusHint && (
+        <p className="mt-3 border-l-2 border-line bg-void px-3 py-2 text-xs leading-relaxed text-smoke">
+          {order.statusHint}
+        </p>
+      )}
 
       {/*
         İptal sebebi.

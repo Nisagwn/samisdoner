@@ -5,7 +5,13 @@ import { formatCents } from "@/lib/money";
 import { BUSINESS_INFO } from "@/data/businessInfo";
 import { getOrderByNo, type OrderWithDetails } from "@/lib/orders/repository";
 import { verifyOrderToken } from "@/lib/orders/token";
-import { STATUS_LABELS, isTerminal, progressIndex, progressSteps } from "@/lib/orders/status";
+import {
+  STATUS_HINTS,
+  STATUS_LABELS,
+  isTerminal,
+  progressIndex,
+  progressSteps,
+} from "@/lib/orders/status";
 import { describeCancelReason } from "@/lib/orders/cancelReasons";
 import { reorderDrafts } from "@/lib/orders/reorder";
 import { getCurrentCustomer } from "@/lib/account/guard";
@@ -83,9 +89,13 @@ export default async function OrderTrackingPage({ params }: Params) {
 
         {failed ? (
           <Notice tone="bad" title={STATUS_LABELS[order.status][de ? "de" : "tr"]}>
-            {/* Panelde seçilen sebep müşterinin kendi dilinde gösterilir;
-                kayıtta duran şey bir kimliktir, hazır cümle değil. */}
-            {describeCancelReason(order.cancelReason, order.lang) ?? t.failedHint}
+            {/* Üç kaynak, bu sırayla: panelde seçilen iptal sebebi (kayıtta
+                duran şey bir kimliktir, hazır cümle değil), durumun kendi
+                açıklaması (süresi dolan siparişte "tahsilat yapılmadı"), ve
+                hiçbiri yoksa genel cümle. */}
+            {describeCancelReason(order.cancelReason, order.lang) ??
+              STATUS_HINTS[order.status]?.[de ? "de" : "tr"] ??
+              t.failedHint}
           </Notice>
         ) : awaitingPayment ? (
           <Notice tone="warn" title={STATUS_LABELS[order.status][de ? "de" : "tr"]}>

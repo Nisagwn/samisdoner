@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePathname } from "next/navigation";
 import type { CartLineInput } from "@/lib/admin/store";
 import type { CheckoutQuote } from "@/lib/orders/checkout";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -186,10 +187,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [fulfillment, zip, loaded]);
 
-  // Sepet içeriği ya da dil değiştiğinde tutarları sunucudan tazele.
+  /*
+   * Sepet içeriği ya da dil değiştiğinde tutarları sunucudan tazele.
+   *
+   * Panelde hiç istenmez: mutfak tabletinde tarayıcı deposunda kalmış eski bir
+   * sepet, sipariş ekranı her açıldığında karşılıksız bir fiyat isteği
+   * doğuruyordu. Panelin sepetle işi yok — çekmecesi de çizilmiyor
+   * (`components/CartMount.tsx`).
+   */
+  const pathname = usePathname();
+  const onAdmin = pathname?.startsWith("/admin") ?? false;
   const requestId = useRef(0);
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || onAdmin) return;
 
     if (lines.length === 0) {
       setQuote(null);
@@ -221,7 +231,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       });
 
     return () => controller.abort();
-  }, [lines, lang, fulfillment, zip, loaded]);
+  }, [lines, lang, fulfillment, zip, loaded, onAdmin]);
 
   const add = useCallback((line: CartLineDraft) => {
     const qty = Math.min(MAX_QTY, Math.max(1, Math.floor(line.qty ?? 1)));

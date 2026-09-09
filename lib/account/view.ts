@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getCatalog, isVisible } from "@/lib/admin/store";
 import { effectivePrice, formatPrice } from "@/lib/admin/types";
-import { STATUS_LABELS, isTerminal } from "@/lib/orders/status";
+import { STATUS_HINTS, STATUS_LABELS, isTerminal } from "@/lib/orders/status";
 import { describeCancelReason } from "@/lib/orders/cancelReasons";
 import { createOrderToken } from "@/lib/orders/token";
 import { reorderDrafts } from "@/lib/orders/reorder";
@@ -68,6 +68,8 @@ export async function getAccountOrders(
         timeStyle: "short",
       }).format(order.createdAt),
       statusLabel: STATUS_LABELS[order.status][de ? "de" : "tr"],
+      // Durumun kendisi yetmediğinde açıklaması (şu an: süresi dolan sipariş).
+      statusHint: STATUS_HINTS[order.status]?.[de ? "de" : "tr"] ?? null,
       active: !isTerminal(order.status),
       // Sebep kimliği burada cümleye çevrilir; istemciye çeviri tablosu
       // taşımanın anlamı yok.

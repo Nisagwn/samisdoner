@@ -10,6 +10,7 @@ import { createOrder } from "./repository";
 import { createOrderSchema } from "./schema";
 import type { CreateOrderResult } from "./result";
 import { createOrderToken } from "./token";
+import { SITE_URL } from "@/lib/site";
 
 /**
  * Sipariş oluşturma — sistemin para dokunan tek giriş noktası.
@@ -45,10 +46,6 @@ function clientIpFromHeaders(): string {
   const forwarded = h.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0].trim();
   return h.get("x-real-ip")?.trim() || "unknown";
-}
-
-function appUrl(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 }
 
 export async function createOrderAction(input: unknown): Promise<CreateOrderResult> {
@@ -178,14 +175,14 @@ export async function createOrderAction(input: unknown): Promise<CreateOrderResu
       totalCents: order.totalCents,
       email: customer.email || account?.email || undefined,
       lang,
-      successUrl: `${appUrl()}/bestellung/${encodeURIComponent(token)}`,
+      successUrl: `${SITE_URL}/bestellung/${encodeURIComponent(token)}`,
       /*
        * İptalde müşteri **ödeme sayfasına** döner, ana sayfaya değil: sepeti ve
        * doldurduğu adres orada duruyor, tek tıkla tekrar deneyebilir. Ana
        * sayfaya atmak, formu yeniden doldurtmak demekti. Sipariş kaydı ödenmemiş
        * kalır ve süresi dolunca kendiliğinden kapanır.
        */
-      cancelUrl: `${appUrl()}/checkout?abgebrochen=1`,
+      cancelUrl: `${SITE_URL}/checkout?abgebrochen=1`,
       expiresAt,
     });
 
