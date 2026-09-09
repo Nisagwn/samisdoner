@@ -1,28 +1,40 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, badRequest, notFound, storeWrite } from "@/lib/admin/guard";
 import { deleteCategory, updateCategory } from "@/lib/admin/store";
+import { parseCategoryPatch } from "@/lib/admin/validate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Params = { params: { id: string } };
 
+/**
+ * Kategori güncelleme.
+ *
+ * Gövde önceden yalnızca `name` okuyordu; `nameTr`, `note`, `noteTr` ve
+ * `sortOrder` şemada olmasına ve menüde gösterilmesine rağmen girilemiyordu.
+ * Doğrulama artık `parseCategoryPatch` içinde ve **kısmi**: sıralama
+ * düğmeleri yalnızca `sortOrder`, düzenleme formu yalnızca metin alanlarını
+ * gönderir; gönderilmeyen alan olduğu gibi kalır.
+ */
 export async function PATCH(request: Request, { params }: Params) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  let name = "";
+  let body: unknown;
   try {
-    const body = (await request.json()) as { name?: unknown };
-    if (typeof body.name === "string") name = body.name.trim();
+    body = await request.json();
   } catch {
     return badRequest("Geçersiz istek gövdesi.");
   }
 
-  if (!name) return badRequest("Kategori adı boş olamaz.");
-  if (name.length > 80) return badRequest("Kategori adı en fazla 80 karakter olabilir.");
+  const parsed = parseCategoryPatch(body);
+  if (!parsed.ok) return badRequest(parsed.error);
+  if (Object.keys(parsed.value).length === 0) {
+    return badRequest("Değiştirilecek alan gönderilmedi.");
+  }
 
-  const updated = await storeWrite(() => updateCategory(params.id, { name }));
+  const updated = await storeWrite(() => updateCategory(params.id, parsed.value));
   if (updated instanceof NextResponse) return updated;
   if (!updated) return notFound("Kategori bulunamadı.");
   return NextResponse.json(updated);

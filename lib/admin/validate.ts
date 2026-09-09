@@ -238,22 +238,37 @@ export function parseProductBody(
    * onları yazmaya hazırdı, panelde alan yoktu ve yazan da yoktu — sonuç,
    * panelden açılan her ürünün menüde "bilgi girilmedi" olarak çıkmasıydı.
    */
-  if (need("vatRate")) {
+  /*
+   * Oran gönderilmediyse yeni üründe yemek oranına düşülür.
+   *
+   * `asVatRate(undefined)` çağrılıp hata verilmez: bu uca panelden başka
+   * yerden de (betik, içe aktarma) ürün açılabilmeli ve o çağrının her
+   * seferinde oranı hatırlaması gerekmemeli. Yanlış olan sessiz varsayılan
+   * değil, **yanlış** sessiz varsayılandır — bu yüzden panel formunda oran
+   * görünür bir alan ve içecek eklerken 19 seçilmesi gerektiği orada yazıyor.
+   */
+  if (has("vatRate")) {
     const r = asVatRate(input.vatRate);
     if (!r.ok) return r;
     out.vatRate = r.value;
+  } else if (!partial) {
+    out.vatRate = 7;
   }
 
-  if (need("allergens")) {
+  if (has("allergens")) {
     const r = asCodes<Allergen>(input.allergens, ALLERGENS, "Alerjen");
     if (!r.ok) return r;
     out.allergens = r.value;
+  } else if (!partial) {
+    out.allergens = [];
   }
 
-  if (need("additives")) {
+  if (has("additives")) {
     const r = asCodes<Additive>(input.additives, ADDITIVES, "Katkı maddesi");
     if (!r.ok) return r;
     out.additives = r.value;
+  } else if (!partial) {
+    out.additives = [];
   }
 
   /*
@@ -384,6 +399,69 @@ export function parseDeliveryZoneBody(
 
   if (has("active")) out.active = Boolean(input.active);
   else if (!partial) out.active = true;
+
+  return { ok: true, value: out };
+}
+
+/* --------------------------------------------------------------- kategori */
+
+/**
+ * Kategori güncelleme gövdesi — kısmi.
+ *
+ * Yalnızca gönderilen alanlar döner: sıralama düğmesi `sortOrder`, düzenleme
+ * formu metin alanlarını yollar. Boş bir yama çağıran tarafta hata sayılır;
+ * burada değil, çünkü "hiçbir alan göndermedin" bir doğrulama hatası değil,
+ * bir istek hatasıdır.
+ *
+ * `name` gönderildiyse boş olamaz — kategorinin adı menüde başlık olarak
+ * çıkıyor. `nameTr`, `note` ve `noteTr` boş bırakılabilir: boş `nameTr`,
+ * "Türkçesi de aynı" demektir (menü `name`'e düşer), boş not "not yok".
+ */
+export function parseCategoryPatch(
+  body: unknown
+): Result<{ name?: string; nameTr?: string; note?: string; noteTr?: string; sortOrder?: number }> {
+  if (typeof body !== "object" || body === null) {
+    return { ok: false, error: "Geçersiz istek gövdesi." };
+  }
+  const input = body as Record<string, unknown>;
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(input, key);
+  const out: {
+    name?: string;
+    nameTr?: string;
+    note?: string;
+    noteTr?: string;
+    sortOrder?: number;
+  } = {};
+
+  if (has("name")) {
+    const r = asString(input.name, "Kategori adı", 80);
+    if (!r.ok) return r;
+    out.name = r.value;
+  }
+
+  if (has("nameTr")) {
+    const r = asString(input.nameTr, "Türkçe kategori adı", 80, false);
+    if (!r.ok) return r;
+    out.nameTr = r.value;
+  }
+
+  if (has("note")) {
+    const r = asString(input.note, "Kategori notu", 200, false);
+    if (!r.ok) return r;
+    out.note = r.value;
+  }
+
+  if (has("noteTr")) {
+    const r = asString(input.noteTr, "Türkçe kategori notu", 200, false);
+    if (!r.ok) return r;
+    out.noteTr = r.value;
+  }
+
+  if (has("sortOrder")) {
+    const r = asSortOrder(input.sortOrder);
+    if (!r.ok) return r;
+    out.sortOrder = r.value;
+  }
 
   return { ok: true, value: out };
 }

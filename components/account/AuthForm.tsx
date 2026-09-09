@@ -103,6 +103,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         busy: "BITTE WARTEN…",
         toRegister: "Noch kein Konto? Jetzt registrieren",
         toLogin: "Sie haben bereits ein Konto? Anmelden",
+        forgot: "Passwort vergessen?",
         guestHint:
           "Ein Konto ist nicht erforderlich — Sie können auch als Gast bestellen. Mit Konto merken wir uns Ihre Adresse und Ihre Bestellungen.",
         passwordHint: "Mindestens 8 Zeichen.",
@@ -121,6 +122,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         busy: "LÜTFEN BEKLEYİN…",
         toRegister: "Hesabınız yok mu? Hemen kaydolun",
         toLogin: "Zaten hesabınız var mı? Giriş yapın",
+        forgot: "Parolanızı mı unuttunuz?",
         guestHint:
           "Hesap zorunlu değildir — misafir olarak da sipariş verebilirsiniz. Hesapla adresinizi ve siparişlerinizi hatırlarız.",
         passwordHint: "En az 8 karakter.",
@@ -215,14 +217,27 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm">
-        <Link
-          href={mode === "login" ? "/konto/registrieren" : "/konto/anmelden"}
-          className="text-smoke underline hover:text-amber transition-colors"
-        >
-          {mode === "login" ? texts.toRegister : texts.toLogin}
-        </Link>
-      </p>
+      <div className="mt-6 space-y-3 text-center text-sm">
+        <p>
+          <Link
+            href={mode === "login" ? "/konto/registrieren" : "/konto/anmelden"}
+            className="text-smoke underline transition-colors hover:text-amber"
+          >
+            {mode === "login" ? texts.toRegister : texts.toLogin}
+          </Link>
+        </p>
+        {/* Yalnızca giriş kipinde: kayıt olurken parolayı unutmuş olamazsınız. */}
+        {mode === "login" && (
+          <p>
+            <Link
+              href="/konto/passwort-vergessen"
+              className="text-smoke underline transition-colors hover:text-amber"
+            >
+              {texts.forgot}
+            </Link>
+          </p>
+        )}
+      </div>
     </div>
   );
 }

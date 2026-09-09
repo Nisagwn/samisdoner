@@ -483,9 +483,18 @@ export async function createCategory(name: string, id: string): Promise<Category
   return toCategory(row);
 }
 
+/**
+ * Kategori güncelleme.
+ *
+ * `nameTr`, `note` ve `noteTr` şemada baştan vardı ve menü onları **okuyordu**
+ * (`getMenuSections` → `MenuSection.titleTr/note/noteTr`), ama panelde
+ * girilemiyordu: kategori düzenleme yalnızca `name` kabul ediyordu. Sonuç,
+ * Türkçe menüde kategori başlıklarının Almanca kalması ve "ekstra malzeme /
+ * depozito" gibi kategori notlarının hiç görünmemesiydi.
+ */
 export async function updateCategory(
   id: string,
-  patch: Partial<Pick<Category, "name" | "sortOrder">>
+  patch: Partial<Pick<Category, "name" | "nameTr" | "note" | "noteTr" | "sortOrder">>
 ): Promise<Category | null> {
   const exists = await prisma.category.findUnique({ where: { id }, select: { id: true } });
   if (!exists) return null;

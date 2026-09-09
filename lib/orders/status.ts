@@ -35,6 +35,15 @@ const TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   EXPIRED: [],
 };
 
+/**
+ * Tüm sipariş durumları.
+ *
+ * Geçiş tablosundan türetilir, elle yazılmaz: şemaya yeni bir durum
+ * eklendiğinde bu liste kendiliğinden büyür ve onu unutan testler
+ * (`needsRefund` kapsamı gibi) hemen konuşur.
+ */
+export const ORDER_STATUSES = Object.keys(TRANSITIONS) as OrderStatus[];
+
 /** Siparişin akışı bitti mi. */
 export function isTerminal(status: OrderStatus): boolean {
   return TRANSITIONS[status].length === 0;

@@ -256,6 +256,16 @@ export async function markOrderPaid(input: {
   method: string | null;
   email?: string;
   raw?: Prisma.InputJsonValue;
+  /**
+   * Olay geçmişine yazılacak kaynak: "stripe" (webhook) ya da "stripe:sync"
+   * (müşteri ödeme sayfasından döndüğünde yapılan mutabakat).
+   *
+   * Önceden ikisi de `provider` değeriyle, yani "stripe" olarak yazılıyordu ve
+   * ayrım yalnızca `console.info` satırındaydı — yani günlükler döndükten
+   * sonra kayboluyordu. Webhook'un çalışmadığı bir dönemde siparişlerin
+   * mutabakatla kapandığını fark etmenin tek yolu bu alan.
+   */
+  actor?: string;
 }): Promise<{ order: OrderWithDetails; alreadyPaid: boolean }> {
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
@@ -314,7 +324,7 @@ export async function markOrderPaid(input: {
         orderId: order.id,
         from: "PENDING_PAYMENT",
         to: "PAID",
-        actor: input.provider,
+        actor: input.actor ?? input.provider,
         meta: { providerRef: input.providerRef, method: input.method },
       },
     });
