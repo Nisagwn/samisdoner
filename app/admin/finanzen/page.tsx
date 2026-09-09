@@ -44,6 +44,37 @@ function rangeLabel(days: number): string {
   return days === 1 ? "Bugün" : `Son ${days} gün`;
 }
 
+/**
+ * Bir önceki eşit dönemle karşılaştırma.
+ *
+ * "1.240 €" tek başına iyi mi kötü mü söylemez; "geçen haftaya göre %12 fazla"
+ * söyler. Önceki dönemde hiç ciro yoksa yüzde hesaplanamaz (sıfıra bölme değil,
+ * anlamsızlık): o durumda kıyas gösterilmez.
+ */
+function Trend({
+  currentCents,
+  previousCents,
+  rangeDays,
+}: {
+  currentCents: number;
+  previousCents: number;
+  rangeDays: number;
+}) {
+  if (previousCents <= 0) return null;
+
+  const change = Math.round(((currentCents - previousCents) / previousCents) * 100);
+  const up = change >= 0;
+
+  return (
+    <p className={`tag mt-2 tabular-nums ${up ? "text-herb" : "text-flame"}`}>
+      {up ? "▲" : "▼"} %{Math.abs(change)}{" "}
+      <span className="text-smoke">
+        {rangeDays === 1 ? "düne göre" : `önceki ${rangeDays} güne göre`}
+      </span>
+    </p>
+  );
+}
+
 export default async function FinancePage({
   searchParams,
 }: {
@@ -82,10 +113,9 @@ export default async function FinancePage({
         <h1 className="font-display text-3xl font-extrabold text-bone md:text-4xl">
           Ciro ve ödemeler
         </h1>
-        <p className="mt-3 max-w-[70ch] text-sm leading-relaxed text-smoke">
-          Buradaki tutarlar <strong className="text-bone">siparişin kesildiği andaki</strong>{" "}
-          kayıtlardan gelir; bugünkü fiyatlarla yeniden hesaplanmaz. Ciroya yalnızca
-          ödemesi alınmış ve iptal edilmemiş siparişler girer.
+        <p className="mt-3 text-sm text-smoke">
+          Ödemesi alınmış ve iptal edilmemiş siparişler; tutarlar sipariş anındaki
+          kayıttan gelir.
         </p>
       </header>
 
@@ -117,6 +147,11 @@ export default async function FinancePage({
             {formatCents(report.selected.revenueCents)}
           </p>
           <p className="mt-2 text-sm text-smoke">Ciro</p>
+          <Trend
+            currentCents={report.selected.revenueCents}
+            previousCents={report.previous.revenueCents}
+            rangeDays={report.rangeDays}
+          />
         </div>
         <div className="bg-char p-6">
           <p className="tag text-smoke">Sipariş</p>
@@ -146,12 +181,20 @@ export default async function FinancePage({
         </div>
       </section>
 
-      {/* --- günlük seyir --- */}
+      {/* --- günlük seyir ---
+          Tek günlük dönemde çizilecek bir seyir yok: o zaten yukarıdaki özet.
+          Uzun dönemde liste kendi içinde kaydırılır; doksan satır sayfayı
+          aşağı iterek KDV ve iptalleri ekrandan çıkarıyordu. */}
+      {report.rangeDays > 1 && (
       <section className="mb-10">
         <h2 className="mb-4 font-display text-xl font-extrabold text-bone">
           Günlük seyir — {currentLabel}
         </h2>
-        <ul className="divide-y divide-line border border-line">
+        <ul
+          className={`divide-y divide-line border border-line ${
+            report.rangeDays > 14 ? "max-h-[26rem] overflow-y-auto overscroll-contain" : ""
+          }`}
+        >
           {report.days.map((day) => (
             <li key={day.date} className="flex items-center gap-4 bg-char px-5 py-2.5">
               <span className="w-14 shrink-0 font-mono text-xs tabular-nums text-smoke">
@@ -175,6 +218,7 @@ export default async function FinancePage({
           ))}
         </ul>
       </section>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-2">
         {/* --- KDV --- */}
@@ -214,10 +258,8 @@ export default async function FinancePage({
               </tbody>
             </table>
           )}
-          <p className="mt-3 text-xs leading-relaxed text-smoke/70">
-            Döküm her siparişte ayrı ayrı dondurulmuştur; buradaki toplam, bugünkü
-            fiyatlardan yeniden hesaplanmış bir tahmin değil, kesilen belgelerin
-            toplamıdır.
+          <p className="mt-3 text-xs text-smoke/70">
+            Döküm sipariş anında dondurulur; bu toplam kesilen belgelerin toplamıdır.
           </p>
         </section>
 
@@ -287,9 +329,8 @@ export default async function FinancePage({
         <h2 className="mb-2 font-display text-xl font-extrabold text-bone">
           Ödemeler — {currentLabel}
         </h2>
-        <p className="mb-4 max-w-[70ch] text-sm leading-relaxed text-smoke">
-          İade, ödeme günü ve hesaba geçen tutar Stripe&apos;ın işidir; panel bunları
-          kopyalamaz. Aşağıdaki bağlantı ilgili ödemeyi Stripe panelinde açar.
+        <p className="mb-4 text-sm text-smoke">
+          İade ve hesaba geçiş Stripe&apos;ın işi; satırdaki bağlantı ödemeyi orada açar.
         </p>
 
         {recent.length === 0 ? (

@@ -86,16 +86,22 @@ export default function AssemblyLog() {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const ctx = gsap.context(() => {
+      /*
+       * Başlangıç konumları bilerek yumuşak: malzemeler eskiden 260 piksel
+       * uzaktan, dörtte bir ölçekten ve dört kat eğik geliyordu — her adım
+       * ekrana çarpma gibi duruyordu. Daha kısa yol, daha küçük eğim ve
+       * ölçekte daha az fark, aynı katmanlı sahneyi sert değil akıcı yapar.
+       */
       itemRefs.current.forEach((el, i) => {
         if (!el) return;
         const step = BASE_CONFIGS[i];
-        const xStart = step.from === "left" ? -260 : step.from === "right" ? 260 : 0;
+        const xStart = step.from === "left" ? -180 : step.from === "right" ? 180 : 0;
         gsap.set(el, {
           opacity: 0,
           x: xStart,
-          y: step.from === "top" ? -160 : 0,
-          rotate: step.rotate * 4,
-          scale: 0.7,
+          y: step.from === "top" ? -120 : 0,
+          rotate: step.rotate * 2.2,
+          scale: 0.88,
           z: (i - (BASE_CONFIGS.length - 1) / 2) * 16,
         });
         const label = labelRefs.current[i];
@@ -103,14 +109,16 @@ export default function AssemblyLog() {
       });
 
       gsap.set(glowRefs.current.filter(Boolean), { opacity: 0 });
-      gsap.set(bigTextRefs.current.filter(Boolean), { opacity: 0, x: 60 });
+      gsap.set(bigTextRefs.current.filter(Boolean), { opacity: 0, x: 40 });
       gsap.set(smokeBg.current, { opacity: 0 });
       gsap.set(flash.current, { opacity: 0 });
-      gsap.set(finalImg.current, { opacity: 0, scale: 0.65, filter: "blur(40px)" });
+      gsap.set(finalImg.current, { opacity: 0, scale: 0.84, filter: "blur(24px)" });
       gsap.set(finalCaption.current, { opacity: 0, y: 16 });
 
-      const STEP_UNIT = 380;
-      const FINALE_UNIT = 900;
+      // Adım başına daha çok kaydırma yolu: aynı hareket daha uzun mesafeye
+      // yayılınca tekerleğin her tıkı sahneyi zıplatmıyor.
+      const STEP_UNIT = 440;
+      const FINALE_UNIT = 1040;
       const TOTAL = BASE_CONFIGS.length * STEP_UNIT + FINALE_UNIT;
 
       const tl = gsap.timeline({
@@ -118,7 +126,9 @@ export default function AssemblyLog() {
           trigger: section.current,
           start: "top top",
           end: `+=${TOTAL}`,
-          scrub: 0.6,
+          // Daha yüksek scrub: kaydırma durduğunda animasyon anında değil
+          // süzülerek yerine oturur.
+          scrub: 1.1,
           pin: true,
           anticipatePin: 1,
           onUpdate: (self) => {
@@ -135,68 +145,86 @@ export default function AssemblyLog() {
         },
       });
 
+      /*
+       * Adımlar birim başına 1 saniyeydi, yani her katman bir öncekinin tam
+       * bittiği yerde başlıyordu; aradaki duraklar sahneyi kesik kesik
+       * gösteriyordu. Süreler artık birimden uzun (1.35) ve konumlar hâlâ tam
+       * birimde, böylece katmanlar birbirinin üstüne binerek geçiyor.
+       */
       BASE_CONFIGS.forEach((step, i) => {
-        tl.to(itemRefs.current[i], { opacity: 1, x: 0, y: 0, rotate: step.rotate, scale: 1, duration: 1, ease: "power3.out" }, i)
-          .to(labelRefs.current[i], { opacity: 1, x: 0, duration: 0.6, ease: "power2.out" }, i + 0.25)
-          .to(glowRefs.current[i], { opacity: 1, duration: 0.7, ease: "power2.out" }, i)
-          .to(bigTextRefs.current[i], { opacity: 1, x: 0, duration: 0.8, ease: "power2.out" }, i);
+        tl.to(itemRefs.current[i], { opacity: 1, x: 0, y: 0, rotate: step.rotate, scale: 1, duration: 1.35, ease: "power2.out" }, i)
+          .to(labelRefs.current[i], { opacity: 1, x: 0, duration: 0.85, ease: "sine.out" }, i + 0.25)
+          .to(glowRefs.current[i], { opacity: 1, duration: 1.1, ease: "sine.inOut" }, i)
+          .to(bigTextRefs.current[i], { opacity: 1, x: 0, duration: 1.1, ease: "sine.out" }, i);
         if (i > 0) {
-          tl.to(glowRefs.current[i - 1], { opacity: 0, duration: 0.7 }, i)
-            .to(bigTextRefs.current[i - 1], { opacity: 0, x: -60, duration: 0.8 }, i);
+          tl.to(glowRefs.current[i - 1], { opacity: 0, duration: 1.1, ease: "sine.inOut" }, i)
+            .to(bigTextRefs.current[i - 1], { opacity: 0, x: -40, duration: 1.1, ease: "sine.in" }, i);
         }
       });
 
       tl.to({}, { duration: 0.5 });
       tl.addLabel("assemble");
 
+      /*
+       * Final: katmanlar oturur, sahne dumana karışır, kesitli döner belirir.
+       *
+       * Bu bölüm eskiden bir kesme (cut) gibiydi — yığın 0.34 saniyede yok
+       * olup tam beyaz bir flaş patlıyordu. Şimdi her hareket bir öncekinin
+       * üstüne biner ve hiçbiri `in` ile hızlanıp durmaz: `sine` eğrileri
+       * başta ve sonda yumuşak.
+       */
       BASE_CONFIGS.forEach((step, i) => {
         tl.to(
           itemRefs.current[i],
           {
             y: step.snap,
             rotate: step.rotate * 0.2,
-            duration: 0.7,
-            ease: reduced ? "power2.out" : "power2.in",
+            duration: 1.05,
+            ease: reduced ? "sine.out" : "power1.inOut",
           },
           "assemble"
         );
       });
-      tl.to(labelRefs.current.filter(Boolean), { opacity: 0, duration: 0.25 }, "assemble");
-      tl.to(bigTextRefs.current[BASE_CONFIGS.length - 1], { opacity: 0, duration: 0.4 }, "assemble");
+      tl.to(labelRefs.current.filter(Boolean), { opacity: 0, duration: 0.5, ease: "sine.in" }, "assemble");
+      tl.to(bigTextRefs.current[BASE_CONFIGS.length - 1], { opacity: 0, duration: 0.7, ease: "sine.in" }, "assemble");
 
-      tl.to(smokeBg.current, { opacity: 0.65, duration: 0.5, ease: "power1.in" }, "assemble+=0.26");
+      tl.to(smokeBg.current, { opacity: 0.65, duration: 0.9, ease: "sine.inOut" }, "assemble+=0.3");
       tl.to(
         stackGroup.current,
-        { opacity: 0, scale: 1.06, filter: "blur(26px)", duration: 0.34, ease: "power2.in" },
-        "assemble+=0.34"
+        { opacity: 0, scale: 1.04, filter: "blur(18px)", duration: 0.9, ease: "sine.inOut" },
+        "assemble+=0.45"
       );
-      tl.to(glowRefs.current.filter(Boolean), { opacity: 0, duration: 0.4 }, "assemble+=0.34");
+      tl.to(glowRefs.current.filter(Boolean), { opacity: 0, duration: 0.9, ease: "sine.inOut" }, "assemble+=0.45");
 
-      tl.to(flash.current, { opacity: 1, duration: 0.14, ease: "power1.in" }, "assemble+=0.5")
-        .to(flash.current, { opacity: 0, duration: 0.7, ease: "power2.out" }, "assemble+=0.64");
+      // Flaş artık patlamıyor, ısınıp sönüyor: tepe değeri tamdan 0.45'e indi
+      // ve iniş çıkış süreleri üç katına çıktı.
+      tl.to(flash.current, { opacity: 0.45, duration: 0.45, ease: "sine.in" }, "assemble+=0.72")
+        .to(flash.current, { opacity: 0, duration: 1.2, ease: "sine.out" }, "assemble+=1.05");
 
       tl.to(
         finalImg.current,
-        { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.9, ease: "power3.out" },
-        "assemble+=0.58"
+        { opacity: 1, scale: 1, filter: "blur(0px)", duration: 1.4, ease: "power2.out" },
+        "assemble+=0.8"
       );
-      tl.to(smokeBg.current, { opacity: 0.28, duration: 1 }, "assemble+=0.58");
-      tl.to(finalCaption.current, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, "assemble+=1.15");
-      tl.to(headerBlock.current, { opacity: 0.15, duration: 0.8 }, "assemble+=1.15");
+      tl.to(smokeBg.current, { opacity: 0.28, duration: 1.3, ease: "sine.inOut" }, "assemble+=0.8");
+      tl.to(finalCaption.current, { opacity: 1, y: 0, duration: 0.9, ease: "sine.out" }, "assemble+=1.7");
+      tl.to(headerBlock.current, { opacity: 0.15, duration: 1.1, ease: "sine.inOut" }, "assemble+=1.6");
     }, section);
 
     let tiltX: ((v: number) => void) | null = null;
     let tiltY: ((v: number) => void) | null = null;
     if (!reduced && tiltGroup.current) {
-      tiltX = gsap.quickTo(tiltGroup.current, "rotationX", { duration: 0.7, ease: "power3.out" });
-      tiltY = gsap.quickTo(tiltGroup.current, "rotationY", { duration: 0.7, ease: "power3.out" });
+      tiltX = gsap.quickTo(tiltGroup.current, "rotationX", { duration: 1, ease: "power2.out" });
+      tiltY = gsap.quickTo(tiltGroup.current, "rotationY", { duration: 1, ease: "power2.out" });
     }
     const el = section.current;
     const onMove = (e: PointerEvent) => {
       if (!el || !tiltX || !tiltY) return;
       const r = el.getBoundingClientRect();
-      tiltY(((e.clientX - r.left) / r.width - 0.5) * 14);
-      tiltX(-((e.clientY - r.top) / r.height - 0.5) * 10);
+      // Eğim genliği düşürüldü (14/10 → 9/6): amaç derinlik hissi, sahneyi
+      // imleçle savurmak değil.
+      tiltY(((e.clientX - r.left) / r.width - 0.5) * 9);
+      tiltX(-((e.clientY - r.top) / r.height - 0.5) * 6);
     };
     const onLeave = () => {
       tiltX?.(0);
@@ -214,7 +242,16 @@ export default function AssemblyLog() {
 
   return (
     <section ref={section} id="assembly" className="relative min-h-[100svh] bg-char overflow-hidden">
-      <div className="absolute inset-x-0 top-0 z-[3] h-px bg-[linear-gradient(90deg,transparent,#FF3D12,#FFC247,#7BD66F,transparent)]" />
+      {/* Üstteki 1 piksellik gökkuşağı çizgisi kaldırıldı: bölümün başında
+          jiletle çekilmiş gibi duruyordu. Yerine aynı renklerin dağılmış
+          hâli — ısı halesi — geldi, kenar yok. */}
+      <div
+        className="absolute inset-x-0 top-0 z-[3] h-24 pointer-events-none"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(255,61,18,0.14) 0%, rgba(255,194,71,0.07) 42%, transparent 100%)",
+        }}
+      />
       {steps.map((step, i) => (
         <div
           key={`glow-${step.code}`}
@@ -273,17 +310,37 @@ export default function AssemblyLog() {
         ))}
       </div>
 
-      <div className="absolute inset-0 z-[1] opacity-[0.055] pointer-events-none [background-image:linear-gradient(#FFF6E8_1px,transparent_1px),linear-gradient(90deg,#FFF6E8_1px,transparent_1px)] [background-size:48px_48px]" />
+      {/* Teknik ızgara: tuvalin dört kenarına kadar keskin uzanıyordu.
+          Opaklığı düşürüldü ve merkeze doğru eriyen bir maskeye alındı. */}
+      <div className="absolute inset-0 z-[1] opacity-[0.035] pointer-events-none [background-image:linear-gradient(#FFF6E8_1px,transparent_1px),linear-gradient(90deg,#FFF6E8_1px,transparent_1px)] [background-size:48px_48px] [mask-image:radial-gradient(ellipse_72%_62%_at_50%_50%,#000_20%,transparent_100%)] [-webkit-mask-image:radial-gradient(ellipse_72%_62%_at_50%_50%,#000_20%,transparent_100%)]" />
 
       <div ref={smokeBg} className="absolute inset-0 z-[2]">
         <Image src="/assets/kitchen-atmosphere.webp" alt="" fill className="object-cover" sizes="100vw" />
         <div className="absolute inset-0 bg-void/55" />
       </div>
 
+      {/* Bölüm sınırları.
+          Sahnenin zemini (`bg-char`) komşu bölümlerin zemininden (`bg-void`)
+          bir ton açık; arada dümdüz bir kesik kalıyordu. Bu iki katman üstte
+          ve altta zemini komşunun rengine eritir, çizgi görünmez olur. */}
+      <div
+        className="absolute inset-x-0 top-0 z-[4] h-40 pointer-events-none"
+        style={{ background: "linear-gradient(180deg, #070604 0%, rgba(7,6,4,0.55) 45%, transparent 100%)" }}
+      />
+      <div
+        className="absolute inset-x-0 bottom-0 z-[4] h-48 pointer-events-none"
+        style={{ background: "linear-gradient(0deg, #070604 0%, rgba(7,6,4,0.6) 42%, transparent 100%)" }}
+      />
+
+      {/* Flaş katmanı: renk geçişleri daha geniş yayıldı, göbek beyaz değil
+          sıcak turuncu — patlama değil köz parlaması. */}
       <div
         ref={flash}
         className="absolute inset-0 z-30 pointer-events-none"
-        style={{ background: "radial-gradient(circle at 50% 55%, rgba(255,180,90,0.9), rgba(255,77,0,0.4) 45%, transparent 75%)" }}
+        style={{
+          background:
+            "radial-gradient(circle at 50% 55%, rgba(255,186,110,0.72) 0%, rgba(255,120,30,0.34) 38%, rgba(255,77,0,0.12) 62%, transparent 82%)",
+        }}
       />
 
       <div className="relative z-10 max-w-[1400px] mx-auto h-[100svh] px-6 md:px-10 flex flex-col">
@@ -329,7 +386,16 @@ export default function AssemblyLog() {
                   style={{ top: step.top, width: step.width, transformStyle: "preserve-3d" }}
                 >
                   <div className="relative" style={{ aspectRatio: "1/1" }}>
-                    <Image src={step.image} alt={step.name} fill sizes="340px" className="object-contain" />
+                    {/* Malzemeler makasla kesilmiş gibi durmasın diye her
+                        katmanın altına yumuşak bir gölge düşüyor; kenar
+                        zemine oturuyor, üstüne yapıştırılmış gibi durmuyor. */}
+                    <Image
+                      src={step.image}
+                      alt={step.name}
+                      fill
+                      sizes="340px"
+                      className="object-contain drop-shadow-[0_16px_34px_rgba(0,0,0,0.5)]"
+                    />
                   </div>
 
                   <div
@@ -357,7 +423,7 @@ export default function AssemblyLog() {
 
                     {openTip === step.code && (
                       <div
-                        className={`absolute top-full mt-2 w-[210px] md:w-[240px] left-1/2 -translate-x-1/2 md:translate-x-0 border border-amber/50 bg-void/95 backdrop-blur-sm p-3 text-xs leading-relaxed text-smoke shadow-[0_20px_50px_rgba(0,0,0,0.6)] ${
+                        className={`absolute top-full mt-2 w-[210px] md:w-[240px] left-1/2 -translate-x-1/2 md:translate-x-0 rounded-md border border-amber/30 bg-void/95 backdrop-blur-sm p-3 text-xs leading-relaxed text-smoke shadow-[0_24px_60px_rgba(0,0,0,0.55)] ${
                           step.from === "left" ? "md:left-0" : "md:left-auto md:right-0"
                         }`}
                       >

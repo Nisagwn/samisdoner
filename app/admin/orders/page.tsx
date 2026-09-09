@@ -22,9 +22,8 @@ export default function AdminOrdersPage() {
       <header>
         <p className="tag text-flame">Sipariş takibi</p>
         <h1 className="mt-2 font-display text-2xl font-extrabold text-bone">Siparişler</h1>
-        <p className="mt-2 max-w-2xl text-sm text-smoke">
-          Ödemesi tamamlanan siparişler burada belirir. Sesli uyarı, siparişe
-          &quot;Görüldü&quot; denene kadar devam eder.
+        <p className="mt-2 text-sm text-smoke">
+          Sesli uyarı, siparişe &quot;Görüldü&quot; denene kadar sürer.
         </p>
       </header>
 

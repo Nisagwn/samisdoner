@@ -69,8 +69,13 @@ export type FinanceReport = {
   selected: PeriodTotals;
   rangeDays: FinanceRangeDays;
   today: PeriodTotals;
-  week: PeriodTotals;
-  month: PeriodTotals;
+  /**
+   * Hemen öncesindeki eşit uzunlukta dönem.
+   *
+   * Tek başına bir ciro rakamı bir şey söylemez; "geçen haftaya göre" söyler.
+   * Bu iki sayı için sipariş satırları belleğe taşınmaz, veritabanı toplar.
+   */
+  previous: { orders: number; revenueCents: number };
   /** Seçilen dönem, eskiden yeniye. */
   days: DayBucket[];
   /** Seçilen dönemin KDV dökümü — muhasebeye giden sayı. */
@@ -146,25 +151,28 @@ type CountedOrder = {
 /**
  * Raporu üretir.
  *
- * Gerekli dönemlerin siparişleri tek sorguda okunur ve toplamlar bellekte çıkarılır.
- * Veritabanına altı ayrı toplama sorgusu atmak yerine bu seçildi: bir imbiss
- * için 30 günlük sipariş sayısı birkaç yüzdür, ama KDV dökümü zaten satır
- * satır JSON okumayı gerektiriyor — o okuma varken toplamları da aynı diziden
- * çıkarmak hem ucuz hem tutarlı.
+ * **Yalnızca seçilen dönem okunur.** Rapor eskiden, ekranda görünmeyen "son 7
+ * gün" ve "son 30 gün" kutuları için her açılışta en az otuz günü belleğe
+ * çekiyordu; "bugün"e bakmak da otuz günlük sorgu demekti. Kutular kalkınca o
+ * zorunluluk da kalktı — dönem daraldıkça sorgu da daralıyor.
+ *
+ * Kalan tek geniş okuma seçilen dönemin siparişleridir ve tek sorgudur: KDV
+ * dökümü zaten satır satır JSON okumayı gerektiriyor, o okuma varken ciroyu,
+ * günleri ve ücretleri de aynı geçişte çıkarmak hem ucuz hem tutarlı — iki
+ * ekran farklı sayı gösteremez.
  */
 export async function getFinanceReport(
   now: Date = new Date(),
   rangeDays: FinanceRangeDays = 7
 ): Promise<FinanceReport> {
   const dayStart = berlinDayStart(now);
-  const weekStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
-  const monthStart = new Date(dayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
   const rangeStart = financeRangeStart(rangeDays, now);
-  const orderStart = new Date(Math.min(rangeStart.getTime(), monthStart.getTime()));
+  // Karşılaştırma dönemi: seçilenin hemen öncesi, aynı uzunlukta.
+  const previousStart = new Date(rangeStart.getTime() - rangeDays * 24 * 60 * 60 * 1000);
 
-  const [orders, cancelledRows, refunds, payments, expiredCount] = await Promise.all([
+  const [orders, previous, cancelledRows, refunds, payments, expiredCount] = await Promise.all([
     prisma.order.findMany({
-      where: { status: { in: [...COUNTED_STATUSES] }, createdAt: { gte: orderStart } },
+      where: { status: { in: [...COUNTED_STATUSES] }, createdAt: { gte: rangeStart } },
       select: {
         createdAt: true,
         totalCents: true,
@@ -173,6 +181,14 @@ export async function getFinanceReport(
         vatBreakdown: true,
       },
       orderBy: { createdAt: "asc" },
+    }),
+    prisma.order.aggregate({
+      where: {
+        status: { in: [...COUNTED_STATUSES] },
+        createdAt: { gte: previousStart, lt: rangeStart },
+      },
+      _count: { _all: true },
+      _sum: { totalCents: true },
     }),
     prisma.order.findMany({
       where: {
@@ -196,8 +212,6 @@ export async function getFinanceReport(
 
   const selected = emptyTotals();
   const today = emptyTotals();
-  const week = emptyTotals();
-  const month = emptyTotals();
 
   const dayMap = new Map<string, DayBucket>();
   // Seçilen dönem boş da olsa listede durur: eksik günler grafikte "veri yok"
@@ -210,9 +224,7 @@ export async function getFinanceReport(
   const vatMap = new Map<number, VatBucketTotal>();
 
   for (const order of orders) {
-    if (order.createdAt >= rangeStart) addToTotals(selected, order);
-    if (order.createdAt >= monthStart) addToTotals(month, order);
-    if (order.createdAt >= weekStart) addToTotals(week, order);
+    addToTotals(selected, order);
     if (order.createdAt >= dayStart) addToTotals(today, order);
 
     const key = berlinDayKey(order.createdAt);
@@ -221,8 +233,6 @@ export async function getFinanceReport(
       bucket.orders += 1;
       bucket.revenueCents += order.totalCents;
     }
-
-    if (order.createdAt < rangeStart) continue;
 
     // Döküm sipariş anında dondurulmuştur; burada yeniden hesaplanmaz, toplanır.
     const buckets = Array.isArray(order.vatBreakdown)
@@ -259,8 +269,10 @@ export async function getFinanceReport(
     selected: finishTotals(selected),
     rangeDays,
     today: finishTotals(today),
-    week: finishTotals(week),
-    month: finishTotals(month),
+    previous: {
+      orders: previous._count._all,
+      revenueCents: previous._sum.totalCents ?? 0,
+    },
     days: [...dayMap.values()],
     vat: [...vatMap.values()].sort((a, b) => a.rate - b.rate),
     cancelled: [...cancelMap.values()].sort((a, b) => b.count - a.count),

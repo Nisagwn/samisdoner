@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
 import AboutUs from "@/components/AboutUs";
-import AssemblyLog from "@/components/AssemblyLog";
 import FinalStack from "@/components/FinalStack";
 import Franchise from "@/components/Franchise";
 import Reviews from "@/components/Reviews";
@@ -15,6 +14,10 @@ import Footer from "@/components/Footer";
  * Ana sayfada sipariş akışının önünü kapatan tanıtım bölümlerinin yeni evi.
  * Hiçbiri silinmedi, hepsi eskisi gibi ve aynı sırada duruyor — yalnızca
  * sipariş vermek isteyen müşterinin yolundan çekildi.
+ *
+ * Katmanlı döner sahnesi (`AssemblyLog`) burada değil: ana sayfaya geri
+ * döndü. Sabitlenen (pin) uzun bir bölüm olduğu için iki sayfada birden
+ * durması aynı sahneyi iki kez izletiyordu.
  *
  * Bölüm kimlikleri (`#unternehmen`, `#franchise`, `#blog`) korundu: navigasyon
  * ve altbilgideki bağlantılar bu sayfaya yönlendirildiğinde doğru bölüme
@@ -35,7 +38,6 @@ export default function UeberUnsPage() {
       <div className="pt-[var(--nav-h)]">
         <AboutUs />
       </div>
-      <AssemblyLog />
       <FinalStack />
       <Franchise />
       <Reviews />

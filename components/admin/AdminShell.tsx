@@ -25,15 +25,36 @@ import { useEffect, useState } from "react";
  */
 const ORDER_POLL_MS = 15_000;
 
-const NAV = [
-  { href: "/admin", label: "Dashboard", exact: true },
-  { href: "/admin/orders", label: "Siparişler", exact: false, pulse: true },
-  { href: "/admin/finanzen", label: "Ciro ve ödemeler", exact: false },
-  { href: "/admin/products", label: "Ürünler", exact: false },
-  { href: "/admin/categories", label: "Kategoriler", exact: false },
-  { href: "/admin/pricing", label: "Fiyat ayarları", exact: false },
-  { href: "/admin/zones", label: "Teslimat bölgeleri", exact: false },
-  { href: "/admin/betrieb", label: "İşletme", exact: false },
+/**
+ * Menü iki öbekte.
+ *
+ * Sekiz satır eşit ağırlıkta dizildiğinde her açılışta baştan okunuyordu; oysa
+ * bunların üçü **her gün**, beşi ayda bir açılır. Ayrım o: üstte vardiyanın
+ * kendisi, altta kurulum. Bir başlık ve bir çizgi, sekiz seçeneği "üç şey artı
+ * ayarlar"a indiriyor.
+ */
+const NAV_GROUPS: {
+  label: string | null;
+  items: { href: string; label: string; exact: boolean; pulse?: boolean }[];
+}[] = [
+  {
+    label: null,
+    items: [
+      { href: "/admin", label: "Bugün", exact: true },
+      { href: "/admin/orders", label: "Siparişler", exact: false, pulse: true },
+      { href: "/admin/finanzen", label: "Ciro ve ödemeler", exact: false },
+    ],
+  },
+  {
+    label: "Ayarlar",
+    items: [
+      { href: "/admin/products", label: "Ürünler", exact: false },
+      { href: "/admin/categories", label: "Kategoriler", exact: false },
+      { href: "/admin/pricing", label: "Fiyat ayarları", exact: false },
+      { href: "/admin/zones", label: "Teslimat bölgeleri", exact: false },
+      { href: "/admin/betrieb", label: "İşletme", exact: false },
+    ],
+  },
 ];
 
 type OrderPulse = { active: number; unacknowledged: number };
@@ -100,26 +121,35 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   const nav = (
     <nav className="flex flex-col gap-1">
-      {NAV.map((item) => {
-        const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-        const badge = item.pulse ? pulse : null;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={() => setNavOpen(false)}
-            aria-current={active ? "page" : undefined}
-            className={`focus-ring tag flex items-center gap-3 px-4 py-3 border-l-2 transition-colors ${
-              active
-                ? "border-amber text-amber bg-amber/10"
-                : "border-transparent text-smoke hover:text-bone hover:bg-panel"
-            }`}
-          >
-            <span className="min-w-0 flex-1">{item.label}</span>
-            {badge && badge.active > 0 && <OrderBadge pulse={badge} />}
-          </Link>
-        );
-      })}
+      {NAV_GROUPS.map((group, index) => (
+        <div key={group.label ?? "main"} className={index > 0 ? "mt-5" : ""}>
+          {group.label && (
+            <p className="tag border-t border-line px-4 pb-2 pt-4 text-smoke/50">
+              {group.label}
+            </p>
+          )}
+          {group.items.map((item) => {
+            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+            const badge = item.pulse ? pulse : null;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setNavOpen(false)}
+                aria-current={active ? "page" : undefined}
+                className={`focus-ring tag flex items-center gap-3 px-4 py-3 border-l-2 transition-colors ${
+                  active
+                    ? "border-amber text-amber bg-amber/10"
+                    : "border-transparent text-smoke hover:text-bone hover:bg-panel"
+                }`}
+              >
+                <span className="min-w-0 flex-1">{item.label}</span>
+                {badge && badge.active > 0 && <OrderBadge pulse={badge} />}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 
