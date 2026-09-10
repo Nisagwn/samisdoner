@@ -1,13 +1,20 @@
 "use client";
 
 /**
- * Hesap ekranlarının ortak form alanı.
+ * Hesap ekranlarının form alanı.
  *
- * Müşteri tarafındaki genel `components/ui` bileşenlerinden ayrı duruyor:
- * oradakiler ödeme formunun hata/`invalid` sözleşmesini taşıyor, buradaki
- * alanlar ise etiket + kutu kadar basit. İkisini birleştirmek, hesap
- * formlarına hiç kullanılmayan bir hata protokolü taşımak olurdu.
+ * Kendi girdi yazımı vardı; artık ortak `components/ui` ilkelini sarıyor.
+ * Ayrı yazımın somut bedeli iOS'taydı: kutunun yazı tipi 14 px olduğu için
+ * alana dokunulduğunda Safari sayfayı yakınlaştırıyor, müşteri formun geri
+ * kalanını göremiyordu. Ortak girdi mobilde 16 px, `sm:` üstünde küçük.
+ *
+ * Sarmalayıcı yine de duruyor: hesap ekranlarında alanlar `id`'yi hem
+ * `htmlFor` hem `name` olarak kullanıyor ve `useState` yerine form gönderimiyle
+ * okunuyor. Bu küçük sözleşmeyi beş çağrı yerinde tekrarlamak yerine burada
+ * bir kez kuruyoruz.
  */
+
+import { Field, TextInput } from "@/components/ui";
 
 export function TextField({
   id,
@@ -17,16 +24,9 @@ export function TextField({
 }: { id: string; label: string; hint?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className="min-w-0">
-      <label htmlFor={id} className="tag mb-2 block text-smoke">
-        {label}
-      </label>
-      <input
-        id={id}
-        name={id}
-        className="w-full border border-line bg-void px-3 py-2.5 text-sm text-bone outline-none transition-colors placeholder:text-smoke/50 focus:border-amber"
-        {...props}
-      />
-      {hint && <p className="mt-1.5 text-xs text-smoke/70">{hint}</p>}
+      <Field label={label} htmlFor={id} hint={hint}>
+        <TextInput id={id} name={id} {...props} />
+      </Field>
     </div>
   );
 }

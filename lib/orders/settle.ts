@@ -34,6 +34,8 @@ export async function settleOrderPayment(input: {
     method: input.method,
     email: input.email,
     raw: input.raw,
+    // Kaynak denetim izine yazılır; günlükte kalması yetmiyordu.
+    actor: input.source,
   });
 
   if (alreadyPaid) {

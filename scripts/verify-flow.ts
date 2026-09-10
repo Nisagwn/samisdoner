@@ -246,6 +246,62 @@ async function main() {
   }
   check("teslim edilmiş sipariş geri alınamıyor", rejected);
 
+  console.log("\n=== H2. İADE ===");
+  /*
+   * Burada Stripe'a **gidilmez**. Akış betiği ödemeyi `markOrderPaid` ile
+   * doğrudan yazıyor; ortada gerçek bir tahsilat olmadığı için gerçek bir
+   * iade de yapılamaz. Sınanan şey iadenin kapıları: sağlayıcıya hangi
+   * durumlarda hiç gidilmediği ve aynı ödemenin ikinci kez iade edilemediği.
+   * Gerçek para hareketi elle yürütülen senaryonun işi (bkz. tests/README.md).
+   */
+  const { refundOrder } = await import("@/lib/orders/refund");
+
+  const paidPayment = await prisma.payment.findFirstOrThrow({
+    where: { orderId: order.id },
+  });
+
+  // İdempotency kapısı: iade satırı varsa sağlayıcıya hiç gidilmez.
+  await prisma.refund.create({
+    data: {
+      paymentId: paidPayment.id,
+      amountCents: paidPayment.amountCents,
+      providerRef: "re_test_verify_flow",
+      reason: "akış doğrulaması",
+    },
+  });
+  const second = await refundOrder(delivered, "ikinci deneme", "verify-flow");
+  check("aynı ödeme ikinci kez iade edilmiyor", second.kind === "already_refunded", second.kind);
+
+  // Ödemesi hiç alınmamış sipariş: sağlayıcıya gitmenin karşılığı yok.
+  await prisma.refund.deleteMany({ where: { paymentId: paidPayment.id } });
+  await prisma.payment.update({
+    where: { id: paidPayment.id },
+    data: { status: "PENDING" },
+  });
+  const nothing = await refundOrder(delivered, "ödeme yok", "verify-flow");
+  check(
+    "ödemesi alınmamış siparişte iade denenmiyor",
+    nothing.kind === "nothing_to_refund",
+    nothing.kind
+  );
+  await prisma.payment.update({ where: { id: paidPayment.id }, data: { status: "PAID" } });
+
+  /*
+   * Denetim izi: ödemeyi kimin kapattığı (webhook mu, ödeme sayfasından
+   * dönüşteki mutabakat mı) artık olay kaydında duruyor. Önceden ikisi de
+   * "stripe" yazıyordu ve ayrım yalnızca console.info satırındaydı — yani
+   * günlükler döndükten sonra kayboluyordu.
+   */
+  const paidEvent = await prisma.orderEvent.findFirst({
+    where: { orderId: order.id, to: "PAID" },
+    select: { actor: true },
+  });
+  check(
+    "ödeme olayının kaynağı geçmişe yazıldı",
+    typeof paidEvent?.actor === "string" && paidEvent.actor.length > 0,
+    paidEvent?.actor ?? "yazılmadı!"
+  );
+
   console.log("\n=== I. MÜŞTERİ TAKİP JETONU ===");
   const resolved = await verifyOrderToken(token);
   check("takip jetonu doğrulanıyor", resolved === order.orderNo, resolved ?? "null");
@@ -273,6 +329,7 @@ async function main() {
   check("sipariş satırları duruyor", linesAfter === 2, `${linesAfter} satır`);
 
   console.log("\n=== TEMİZLİK ===");
+  await prisma.refund.deleteMany({ where: { payment: { orderId: order.id } } });
   await prisma.orderEvent.deleteMany({ where: { orderId: order.id } });
   await prisma.payment.deleteMany({ where: { orderId: order.id } });
   await prisma.orderLine.deleteMany({ where: { orderId: order.id } });

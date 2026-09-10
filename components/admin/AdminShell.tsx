@@ -49,6 +49,7 @@ const NAV_GROUPS: {
     label: "Ayarlar",
     items: [
       { href: "/admin/products", label: "Ürünler", exact: false },
+      { href: "/admin/allergene", label: "Alerjen bilgisi", exact: false },
       { href: "/admin/categories", label: "Kategoriler", exact: false },
       { href: "/admin/pricing", label: "Fiyat ayarları", exact: false },
       { href: "/admin/zones", label: "Teslimat bölgeleri", exact: false },

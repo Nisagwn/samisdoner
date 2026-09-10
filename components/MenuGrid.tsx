@@ -15,8 +15,9 @@ import { BUSINESS_INFO } from "@/data/businessInfo";
 /**
  * Karta (Speisekarte) gövdesi — sitenin sipariş yüzeyi.
  *
- * Hem ana sayfada hem `/speisekarte` sayfasında **aynı bileşen** çalışır; ikisi
- * arasındaki tek fark başlık düzeyi ve üst boşluktur (`standalone`). Böylece
+ * Hem ana sayfada hem `/speisekarte` sayfasında **aynı bileşen** çalışır, aynı
+ * biçimde: her iki yerde de üstünde başka bir bölüm (vitrin) durduğu için menü
+ * hiçbir zaman sayfanın ilk başlığı değildir ve `h2` ile açılır. Böylece
  * müşteri hangi kapıdan girerse girsin aynı menüyü, aynı davranışla görür.
  *
  * Ürünler admin panelinin yazdığı katalogtan sunucu tarafında gelir
@@ -31,11 +32,6 @@ import { BUSINESS_INFO } from "@/data/businessInfo";
 
 type Props = {
   sections: MenuSection[];
-  /**
-   * Kendi sayfasında mı (üstte sabit navbar var, başlık `h1` olmalı) yoksa ana
-   * sayfada bir bölüm olarak mı duruyor.
-   */
-  standalone?: boolean;
 };
 
 /** Arama kutusunun eşleştirdiği alanlar; numara da dahil ("07" yazınca bulunur). */
@@ -48,7 +44,7 @@ function matches(item: MenuItem, needle: string): boolean {
   return haystack.includes(needle);
 }
 
-export default function MenuGrid({ sections, standalone = true }: Props) {
+export default function MenuGrid({ sections }: Props) {
   const { t, lang } = useLanguage();
   const section = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -127,15 +123,11 @@ export default function MenuGrid({ sections, standalone = true }: Props) {
     return () => observer.disconnect();
   }, [visible]);
 
-  const Heading = standalone ? "h1" : "h2";
-
   return (
     <section
       ref={section}
       id="menu"
-      className={`relative overflow-hidden bg-char pb-28 md:pb-36 ${
-        standalone ? "pt-[calc(var(--nav-h)+3rem)]" : "pt-16 md:pt-20 border-t border-line"
-      }`}
+      className="relative overflow-hidden bg-char pb-28 md:pb-36 pt-16 md:pt-20 border-t border-line"
     >
       <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,#FF3D12,#FFC247,#7BD66F,transparent)]" />
       <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_16%_10%,rgba(255,61,18,0.16),transparent_36%),radial-gradient(ellipse_at_86%_20%,rgba(98,213,255,0.10),transparent_34%)]" />
@@ -144,11 +136,11 @@ export default function MenuGrid({ sections, standalone = true }: Props) {
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
           <div>
             <p className="tag text-flame mb-3">{t.menuGrid.tag}</p>
-            <Heading className="section-title font-display font-extrabold text-bone">
+            <h2 className="section-title font-display font-extrabold text-bone">
               {t.menuGrid.title1}
               <br />
               <span className="text-flame">{t.menuGrid.title2}</span>
-            </Heading>
+            </h2>
           </div>
           <p className="tag text-smoke max-w-[280px]">{t.menuGrid.subText}</p>
         </div>

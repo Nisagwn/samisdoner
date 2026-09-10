@@ -1,5 +1,12 @@
 import type { ProductPatch } from "./store";
-import type { Variant } from "./types";
+import {
+  ADDITIVES,
+  ALLERGENS,
+  VAT_RATES,
+  type Additive,
+  type Allergen,
+  type Variant,
+} from "./types";
 import type { DeliveryZoneInput } from "@/lib/orders/zones";
 import { toCents } from "@/lib/money";
 
@@ -73,6 +80,58 @@ function asSortOrder(value: unknown): Result<number> {
   }
   if (num < 0 || num > 1_000_000) return { ok: false, error: "Sıra numarası aralık dışı." };
   return { ok: true, value: Math.round(num) };
+}
+
+/* ------------------------------------------------------ yasal bilgi alanları */
+
+/**
+ * Sabit bir listeden seçilmiş kod kümesi.
+ *
+ * Bilinmeyen kod **sessizce düşürülmez, hata verir**. Alerjen alanında sessiz
+ * düşürmenin bedeli, işletmecinin "glüteni işaretledim" sanıp menüde hiçbir
+ * şey görmemesidir; bu alanda görünmeyen bir hata doğrudan sağlık riski.
+ *
+ * Tekrarlar temizlenir, sıra girişten bağımsız olarak sabit listenin sırasına
+ * göre normalize edilir: aynı ürün iki kez kaydedildiğinde veri değişmesin.
+ */
+function asCodes<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  field: string
+): Result<T[]> {
+  if (value === undefined || value === null) return { ok: true, value: [] };
+  if (!Array.isArray(value)) return { ok: false, error: `${field} liste olmalı.` };
+  if (value.length > allowed.length) {
+    return { ok: false, error: `${field} listesinde tekrar eden kayıt var.` };
+  }
+
+  const picked = new Set<T>();
+  for (const item of value) {
+    if (typeof item !== "string" || !allowed.includes(item as T)) {
+      return { ok: false, error: `${field} listesinde tanınmayan değer var.` };
+    }
+    picked.add(item as T);
+  }
+  return { ok: true, value: allowed.filter((code) => picked.has(code)) };
+}
+
+/**
+ * KDV oranı.
+ *
+ * Serbest sayı kabul edilmez: oran fişte ve KDV dökümünde görünüyor, yanlış
+ * bir değer vergi beyanına kadar gider. Steueränderungsgesetz 2025 sonrası
+ * geçerli iki oran var — yemek %7, içecek %19 (`VAT_RATES`).
+ */
+function asVatRate(value: unknown): Result<number> {
+  const num = typeof value === "string" ? Number(value.trim()) : value;
+  if (typeof num !== "number" || !Number.isFinite(num)) {
+    return { ok: false, error: "KDV oranı sayı olmalı." };
+  }
+  const match = VAT_RATES.find((rate) => rate === num);
+  if (match === undefined) {
+    return { ok: false, error: `KDV oranı yalnızca ${VAT_RATES.join(" veya ")} olabilir.` };
+  }
+  return { ok: true, value: match };
 }
 
 export function parseProductBody(
@@ -170,6 +229,71 @@ export function parseProductBody(
   // bilinçli olarak seçer.
   if (has("featured")) out.featured = Boolean(input.featured);
   else if (!partial) out.featured = false;
+
+  /*
+   * Yasal bilgi alanları.
+   *
+   * Bu blok yoktu: `allergens`, `additives`, `vatRate`, `allergenInfoConfirmed`
+   * ve `isPerishable` gövdede gelse bile sessizce düşüyordu. Depo katmanı
+   * onları yazmaya hazırdı, panelde alan yoktu ve yazan da yoktu — sonuç,
+   * panelden açılan her ürünün menüde "bilgi girilmedi" olarak çıkmasıydı.
+   */
+  /*
+   * Oran gönderilmediyse yeni üründe yemek oranına düşülür.
+   *
+   * `asVatRate(undefined)` çağrılıp hata verilmez: bu uca panelden başka
+   * yerden de (betik, içe aktarma) ürün açılabilmeli ve o çağrının her
+   * seferinde oranı hatırlaması gerekmemeli. Yanlış olan sessiz varsayılan
+   * değil, **yanlış** sessiz varsayılandır — bu yüzden panel formunda oran
+   * görünür bir alan ve içecek eklerken 19 seçilmesi gerektiği orada yazıyor.
+   */
+  if (has("vatRate")) {
+    const r = asVatRate(input.vatRate);
+    if (!r.ok) return r;
+    out.vatRate = r.value;
+  } else if (!partial) {
+    out.vatRate = 7;
+  }
+
+  if (has("allergens")) {
+    const r = asCodes<Allergen>(input.allergens, ALLERGENS, "Alerjen");
+    if (!r.ok) return r;
+    out.allergens = r.value;
+  } else if (!partial) {
+    out.allergens = [];
+  }
+
+  if (has("additives")) {
+    const r = asCodes<Additive>(input.additives, ADDITIVES, "Katkı maddesi");
+    if (!r.ok) return r;
+    out.additives = r.value;
+  } else if (!partial) {
+    out.additives = [];
+  }
+
+  /*
+   * "Bildirimi zorunlu madde yok" beyanı.
+   *
+   * Boş liste tek başına iki farklı şey anlatabilir: bilgi girilmedi, ya da
+   * gerçekten madde yok. Ayrımı yalnızca bu bayrak taşır ve işletmecinin
+   * bilinçli beyanıdır — varsayılanı `false`, yani "girilmedi".
+   */
+  if (has("allergenInfoConfirmed")) {
+    out.allergenInfoConfirmed = Boolean(input.allergenInfoConfirmed);
+  } else if (!partial) {
+    out.allergenInfoConfirmed = false;
+  }
+
+  /*
+   * § 312g Abs. 2 Nr. 1 BGB — cayma hakkı istisnası yalnızca çabuk bozulan
+   * malda. Hazırlanan yemek bozulur, kapalı şişe içecek bozulmaz; bu yüzden
+   * varsayılan `true` ama içeceklerde işaret kaldırılmalı.
+   */
+  if (has("isPerishable")) {
+    out.isPerishable = Boolean(input.isPerishable);
+  } else if (!partial) {
+    out.isPerishable = true;
+  }
 
   // Sıra yalnızca gönderildiğinde değişir; yeni üründe depo sonuna eklenir.
   if (has("sortOrder")) {
@@ -275,6 +399,69 @@ export function parseDeliveryZoneBody(
 
   if (has("active")) out.active = Boolean(input.active);
   else if (!partial) out.active = true;
+
+  return { ok: true, value: out };
+}
+
+/* --------------------------------------------------------------- kategori */
+
+/**
+ * Kategori güncelleme gövdesi — kısmi.
+ *
+ * Yalnızca gönderilen alanlar döner: sıralama düğmesi `sortOrder`, düzenleme
+ * formu metin alanlarını yollar. Boş bir yama çağıran tarafta hata sayılır;
+ * burada değil, çünkü "hiçbir alan göndermedin" bir doğrulama hatası değil,
+ * bir istek hatasıdır.
+ *
+ * `name` gönderildiyse boş olamaz — kategorinin adı menüde başlık olarak
+ * çıkıyor. `nameTr`, `note` ve `noteTr` boş bırakılabilir: boş `nameTr`,
+ * "Türkçesi de aynı" demektir (menü `name`'e düşer), boş not "not yok".
+ */
+export function parseCategoryPatch(
+  body: unknown
+): Result<{ name?: string; nameTr?: string; note?: string; noteTr?: string; sortOrder?: number }> {
+  if (typeof body !== "object" || body === null) {
+    return { ok: false, error: "Geçersiz istek gövdesi." };
+  }
+  const input = body as Record<string, unknown>;
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(input, key);
+  const out: {
+    name?: string;
+    nameTr?: string;
+    note?: string;
+    noteTr?: string;
+    sortOrder?: number;
+  } = {};
+
+  if (has("name")) {
+    const r = asString(input.name, "Kategori adı", 80);
+    if (!r.ok) return r;
+    out.name = r.value;
+  }
+
+  if (has("nameTr")) {
+    const r = asString(input.nameTr, "Türkçe kategori adı", 80, false);
+    if (!r.ok) return r;
+    out.nameTr = r.value;
+  }
+
+  if (has("note")) {
+    const r = asString(input.note, "Kategori notu", 200, false);
+    if (!r.ok) return r;
+    out.note = r.value;
+  }
+
+  if (has("noteTr")) {
+    const r = asString(input.noteTr, "Türkçe kategori notu", 200, false);
+    if (!r.ok) return r;
+    out.noteTr = r.value;
+  }
+
+  if (has("sortOrder")) {
+    const r = asSortOrder(input.sortOrder);
+    if (!r.ok) return r;
+    out.sortOrder = r.value;
+  }
 
   return { ok: true, value: out };
 }

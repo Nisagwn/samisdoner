@@ -3,6 +3,7 @@ import { formatCents } from "@/lib/money";
 import { BUSINESS_INFO } from "@/data/businessInfo";
 import type { OrderWithDetails } from "@/lib/orders/repository";
 import { orderTrackingUrl } from "@/lib/orders/token";
+import { SITE_URL } from "@/lib/site";
 
 /**
  * Sipariş e-postaları.
@@ -228,5 +229,111 @@ export async function sendOrderConfirmation(order: OrderWithDetails): Promise<bo
       ? `Bestellbestätigung ${order.orderNo}`
       : `Sipariş onayı ${order.orderNo}`,
     html: shell(de ? "Bestellbestätigung" : "Sipariş onayı", body),
+  });
+}
+
+/**
+ * Müşteriye iade bildirimi.
+ *
+ * İptal maili değil **para** mailidir: müşterinin bu anda öğrenmesi gereken
+ * şey siparişin iptal edildiği değil (onu takip sayfasında zaten görüyor),
+ * parasının geri gönderildiği ve ne zaman hesabında olacağıdır. "Birkaç iş
+ * günü" ifadesi bilinçli: süreyi biz değil kartın bankası belirliyor, kesin
+ * gün vermek tutulamayacak bir söz olurdu.
+ *
+ * İptal sebebi de burada tekrarlanır; müşteri maili açtığında elinde tek
+ * parça bilgi olsun diye.
+ */
+export async function sendRefundNotice(
+  order: OrderWithDetails,
+  amountCents: number,
+  reason: string
+): Promise<boolean> {
+  if (!order.email) {
+    console.info(`[mail] ${order.orderNo} — müşteri e-postası yok, iade bildirimi atlandı.`);
+    return false;
+  }
+
+  const de = order.lang !== "tr";
+
+  const intro = de
+    ? `Ihre Bestellung wurde storniert und der Betrag zurückerstattet.`
+    : `Siparişiniz iptal edildi ve tutar iade edildi.`;
+
+  const timing = de
+    ? `Die Gutschrift erfolgt über Ihr ursprüngliches Zahlungsmittel. Je nach Bank kann es einige Werktage dauern, bis der Betrag auf Ihrem Konto sichtbar ist.`
+    : `İade, ödemeyi yaptığınız yöntem üzerinden yapılır. Bankanıza bağlı olarak tutarın hesabınızda görünmesi birkaç iş günü sürebilir.`;
+
+  const reasonLabel = de ? "Grund" : "Sebep";
+
+  const body = `
+    <p style="margin:0 0 12px;">${intro}</p>
+    <p style="margin:0 0 16px;font-size:15px;">
+      <strong>${escapeHtml(order.orderNo)}</strong> —
+      <strong>${formatCents(amountCents)}</strong>
+    </p>
+    ${reason ? `<p style="margin:0 0 16px;padding:8px;background:#f5f5f5;">${escapeHtml(reasonLabel)}: ${escapeHtml(reason)}</p>` : ""}
+    <p style="margin:0 0 16px;color:#666;font-size:13px;">${timing}</p>
+    ${linesTable(order)}`;
+
+  return send({
+    to: order.email,
+    subject: de
+      ? `Rückerstattung ${order.orderNo} — ${formatCents(amountCents)}`
+      : `İade ${order.orderNo} — ${formatCents(amountCents)}`,
+    html: shell(de ? "Rückerstattung" : "İade", body),
+  });
+}
+
+/**
+ * Parola sıfırlama bağlantısı.
+ *
+ * Bu dosyadaki tek sipariş dışı gönderim. Aynı yerde durmasının sebebi
+ * gönderim altyapısının (`send`, `shell`, `from()`) tek olması; ayrı bir
+ * modül, `RESEND_API_KEY` yokken sessizce atlama davranışını ikinci kez
+ * yazmak olurdu.
+ *
+ * Bağlantının geçerlilik süresi metinde açıkça yazılır: kullanıcı maili yarın
+ * açtığında "bağlantı çalışmıyor" diye destek araması yerine ne olduğunu
+ * anlasın.
+ */
+export async function sendPasswordResetMail(input: {
+  to: string;
+  name: string;
+  lang: string;
+  token: string;
+}): Promise<boolean> {
+  const de = input.lang !== "tr";
+  const url = `${SITE_URL}/konto/passwort-neu?token=${encodeURIComponent(input.token)}`;
+
+  const intro = de
+    ? `Sie haben angefordert, Ihr Passwort zurückzusetzen. Über den folgenden Link vergeben Sie ein neues Passwort.`
+    : `Parolanızı sıfırlama talebinde bulundunuz. Aşağıdaki bağlantıdan yeni bir parola belirleyebilirsiniz.`;
+
+  const expiry = de
+    ? `Der Link ist eine Stunde lang gültig und kann nur einmal verwendet werden.`
+    : `Bağlantı bir saat geçerlidir ve yalnızca bir kez kullanılabilir.`;
+
+  const ignore = de
+    ? `Falls Sie das nicht angefordert haben, können Sie diese E-Mail ignorieren — Ihr Passwort bleibt unverändert.`
+    : `Bu talebi siz yapmadıysanız bu e-postayı yok sayabilirsiniz; parolanız değişmez.`;
+
+  const label = de ? "Neues Passwort vergeben" : "Yeni parola belirle";
+
+  const body = `
+    <p style="margin:0 0 12px;">${escapeHtml(de ? "Hallo" : "Merhaba")} ${escapeHtml(input.name)},</p>
+    <p style="margin:0 0 20px;">${intro}</p>
+    <p style="margin:0 0 20px;">
+      <a href="${url}" style="display:inline-block;background:#111;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">
+        ${label}
+      </a>
+    </p>
+    <p style="margin:0 0 8px;font-size:13px;color:#666;">${expiry}</p>
+    <p style="margin:0;font-size:13px;color:#666;">${ignore}</p>`;
+
+  return send({
+    to: input.to,
+    subject: de ? "Passwort zurücksetzen" : "Parola sıfırlama",
+    html: shell(de ? "Passwort zurücksetzen" : "Parola sıfırlama", body),
   });
 }

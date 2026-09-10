@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { Button, Field, Notice, TextInput } from "@/components/ui";
 
 /**
  * Giriş ve kayıt formu.
@@ -15,6 +16,12 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
  * Yönlendirme `?next=` parametresini kullanır ama **yalnızca site içi**
  * yollara: dışarıdan verilen bir adrese yönlendirmek, kimlik doğrulama
  * sayfasını açık yönlendirme (open redirect) aracına çevirir.
+ *
+ * Alanlar ve düğme `components/ui`'den gelir. Bu dosyanın kendi `Field`
+ * kopyası vardı; iOS'ta 16 px altındaki yazı tipi yüzünden alana
+ * dokunulduğunda sayfa yakınlaşıyor ve formun geri kalanı ekrandan çıkıyordu.
+ * Ortak girdi mobilde `text-base`, `sm:` üstünde küçük — tek yerde çözülmüş
+ * bir sorunun ikinci bir kopyada tekrar çözülmesini beklemek çalışmıyor.
  */
 
 type Mode = "login" | "register";
@@ -96,6 +103,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         busy: "BITTE WARTEN…",
         toRegister: "Noch kein Konto? Jetzt registrieren",
         toLogin: "Sie haben bereits ein Konto? Anmelden",
+        forgot: "Passwort vergessen?",
         guestHint:
           "Ein Konto ist nicht erforderlich — Sie können auch als Gast bestellen. Mit Konto merken wir uns Ihre Adresse und Ihre Bestellungen.",
         passwordHint: "Mindestens 8 Zeichen.",
@@ -114,6 +122,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         busy: "LÜTFEN BEKLEYİN…",
         toRegister: "Hesabınız yok mu? Hemen kaydolun",
         toLogin: "Zaten hesabınız var mı? Giriş yapın",
+        forgot: "Parolanızı mı unuttunuz?",
         guestHint:
           "Hesap zorunlu değildir — misafir olarak da sipariş verebilirsiniz. Hesapla adresinizi ve siparişlerinizi hatırlarız.",
         passwordHint: "En az 8 karakter.",
@@ -134,58 +143,64 @@ export default function AuthForm({ mode }: { mode: Mode }) {
       </header>
 
       <form onSubmit={submit} className="space-y-4" noValidate>
-        {error && (
-          <p role="alert" className="border border-flame bg-flame/10 px-3 py-2 text-sm text-flame">
-            {error}
-          </p>
-        )}
+        {error && <Notice tone="bad">{error}</Notice>}
 
         {mode === "register" && (
           <>
-            <Field
-              id="name"
-              label={texts.name}
-              value={form.name}
-              onChange={set("name")}
-              autoComplete="name"
-              invalid={field === "name"}
-            />
-            <Field
-              id="phone"
-              label={texts.phone}
-              value={form.phone}
-              onChange={set("phone")}
-              type="tel"
-              autoComplete="tel"
-              invalid={field === "phone"}
-            />
+            <Field label={texts.name} htmlFor="name">
+              <TextInput
+                id="name"
+                name="name"
+                value={form.name}
+                onChange={set("name")}
+                autoComplete="name"
+                invalid={field === "name"}
+              />
+            </Field>
+            <Field label={texts.phone} htmlFor="phone">
+              <TextInput
+                id="phone"
+                name="phone"
+                value={form.phone}
+                onChange={set("phone")}
+                type="tel"
+                autoComplete="tel"
+                invalid={field === "phone"}
+              />
+            </Field>
           </>
         )}
 
-        <Field
-          id="email"
-          label={texts.email}
-          value={form.email}
-          onChange={set("email")}
-          type="email"
-          autoComplete="email"
-          invalid={field === "email"}
-        />
+        <Field label={texts.email} htmlFor="email">
+          <TextInput
+            id="email"
+            name="email"
+            value={form.email}
+            onChange={set("email")}
+            type="email"
+            autoComplete="email"
+            invalid={field === "email"}
+          />
+        </Field>
 
-        <div>
-          <Field
+        {/* İpucu ayrı bir paragraf değil alanın kendi `hint` yuvası: ekran
+            okuyucu ipucunu alanla birlikte okur, ve hata çıktığında ikisinin
+            hangisinin görüneceğine tek yerde karar verilir. */}
+        <Field
+          label={texts.password}
+          htmlFor="password"
+          hint={mode === "register" ? texts.passwordHint : undefined}
+        >
+          <TextInput
             id="password"
-            label={texts.password}
+            name="password"
             value={form.password}
             onChange={set("password")}
             type="password"
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             invalid={field === "password"}
           />
-          {mode === "register" && (
-            <p className="mt-1.5 text-xs text-smoke/70">{texts.passwordHint}</p>
-          )}
-        </div>
+        </Field>
 
         {mode === "register" && (
           <p className="text-xs leading-relaxed text-smoke/70">
@@ -197,51 +212,32 @@ export default function AuthForm({ mode }: { mode: Mode }) {
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={busy}
-          className="focus-ring w-full bg-flame-gradient py-3 font-display text-xs font-extrabold tracking-wider text-void transition-[filter,transform] hover:brightness-110 active:translate-y-px disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={busy} className="w-full text-xs">
           {busy ? texts.busy : mode === "login" ? texts.loginBtn : texts.registerBtn}
-        </button>
+        </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm">
-        <Link
-          href={mode === "login" ? "/konto/registrieren" : "/konto/anmelden"}
-          className="text-smoke underline hover:text-amber transition-colors"
-        >
-          {mode === "login" ? texts.toRegister : texts.toLogin}
-        </Link>
-      </p>
-    </div>
-  );
-}
-
-function Field({
-  id,
-  label,
-  invalid,
-  ...props
-}: {
-  id: string;
-  label: string;
-  invalid?: boolean;
-} & React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <div>
-      <label htmlFor={id} className="tag mb-2 block text-smoke">
-        {label}
-      </label>
-      <input
-        id={id}
-        name={id}
-        aria-invalid={invalid || undefined}
-        className={`w-full border bg-void px-3 py-2.5 text-sm text-bone outline-none transition-colors placeholder:text-smoke/50 focus:border-amber ${
-          invalid ? "border-flame" : "border-line"
-        }`}
-        {...props}
-      />
+      <div className="mt-6 space-y-3 text-center text-sm">
+        <p>
+          <Link
+            href={mode === "login" ? "/konto/registrieren" : "/konto/anmelden"}
+            className="text-smoke underline transition-colors hover:text-amber"
+          >
+            {mode === "login" ? texts.toRegister : texts.toLogin}
+          </Link>
+        </p>
+        {/* Yalnızca giriş kipinde: kayıt olurken parolayı unutmuş olamazsınız. */}
+        {mode === "login" && (
+          <p>
+            <Link
+              href="/konto/passwort-vergessen"
+              className="text-smoke underline transition-colors hover:text-amber"
+            >
+              {texts.forgot}
+            </Link>
+          </p>
+        )}
+      </div>
     </div>
   );
 }

@@ -35,6 +35,15 @@ const TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   EXPIRED: [],
 };
 
+/**
+ * Tüm sipariş durumları.
+ *
+ * Geçiş tablosundan türetilir, elle yazılmaz: şemaya yeni bir durum
+ * eklendiğinde bu liste kendiliğinden büyür ve onu unutan testler
+ * (`needsRefund` kapsamı gibi) hemen konuşur.
+ */
+export const ORDER_STATUSES = Object.keys(TRANSITIONS) as OrderStatus[];
+
 /** Siparişin akışı bitti mi. */
 export function isTerminal(status: OrderStatus): boolean {
   return TRANSITIONS[status].length === 0;
@@ -104,6 +113,34 @@ export const STATUS_LABELS: Record<OrderStatus, { de: string; tr: string }> = {
   CANCELLED: { de: "Storniert", tr: "İptal edildi" },
   REJECTED: { de: "Abgelehnt", tr: "Reddedildi" },
   EXPIRED: { de: "Abgelaufen", tr: "Süresi doldu" },
+};
+
+/**
+ * Durumun tek başına anlatmadığı şeyi anlatan cümle.
+ *
+ * Şu an yalnızca `EXPIRED` için var ve gerekçesi somut: müşteri ödeme
+ * sayfasında sekmeyi kapattığında sipariş 31 dakika sonra bakım göreviyle
+ * süresi dolmuş sayılıyor. Ekranda tek başına "Süresi doldu" yazması iki
+ * soruyu cevapsız bırakıyordu — *neden* ve *param gitti mi*. İkincisi
+ * cevapsız kalınca müşteri telefona sarılıyor.
+ *
+ * "Tahsilat yapılmadı" güvenli bir ifade: `EXPIRED` yalnızca hiç ödeme
+ * alınmamış siparişe uygulanır. Ödemesi alınmış ama bildirimi gecikmiş sipariş
+ * bakım görevinde bilinçli olarak atlanır (bkz. lib/orders/reconcile.ts) ve
+ * `PENDING_PAYMENT`'ta bekletilir.
+ *
+ * Aynı metin hem takip sayfasında hem hesap listesinde kullanılır: iki yerde
+ * iki farklı açıklama, müşterinin hangisine inanacağını bilememesi demek.
+ */
+export const STATUS_HINTS: Partial<Record<OrderStatus, { de: string; tr: string }>> = {
+  EXPIRED: {
+    de:
+      "Die Zahlung wurde nicht abgeschlossen, deshalb ist diese Bestellung abgelaufen. " +
+      "Es wurde nichts abgebucht — Sie können jederzeit neu bestellen.",
+    tr:
+      "Ödeme tamamlanmadığı için bu siparişin süresi doldu. " +
+      "Hesabınızdan hiçbir tahsilat yapılmadı — dilediğiniz zaman yeniden sipariş verebilirsiniz.",
+  },
 };
 
 /**

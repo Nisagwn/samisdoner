@@ -102,6 +102,8 @@ export const deTranslations: Translations = {
     dineIn: "Vor Ort essen (Ja)",
     takeaway: "Zum Mitnehmen (Ja)",
     noDelivery: "Keine Lieferung",
+    openNow: "Jetzt geöffnet",
+    closedNow: "Zurzeit geschlossen",
   },
   about: {
     tag: "ÜBER SAMİ´S DÖNER",
@@ -393,5 +395,19 @@ export const deTranslations: Translations = {
       blog: "News",
       contact: "Kontakt",
     },
+  },
+  errors: {
+    notFoundTag: "404",
+    notFoundTitle: "SEITE NICHT GEFUNDEN",
+    notFoundText:
+      "Diese Seite wurde verschoben oder hat nie existiert. Die Speisekarte ist unverändert da.",
+    errorTag: "FEHLER",
+    errorTitle: "DA IST ETWAS SCHIEFGELAUFEN",
+    errorText:
+      "Die Seite konnte nicht geladen werden. Ihr Warenkorb bleibt erhalten — ein erneuter Versuch reicht oft schon.",
+    retryBtn: "ERNEUT VERSUCHEN",
+    menuBtn: "ZUR SPEISEKARTE",
+    homeBtn: "STARTSEITE",
+    callHint: "Wenn es eilig ist, nehmen wir Ihre Bestellung auch telefonisch auf:",
   },
 };

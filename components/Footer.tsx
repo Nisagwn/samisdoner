@@ -1,7 +1,5 @@
-"use client";
-
 import Link from "next/link";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { getTranslations } from "@/lib/i18n/server";
 import { BUSINESS_INFO } from "@/data/businessInfo";
 
 /** Yalnızca gerçekten tanımlanmış hesaplar listelenir (bkz. businessInfo). */
@@ -11,8 +9,16 @@ const SOCIAL = [
   { label: "YouTube", href: BUSINESS_INFO.social.youtube },
 ].filter((item) => item.href.length > 0);
 
-export default function Footer() {
-  const { t } = useLanguage();
+/*
+ * Sunucu bileşeni.
+ *
+ * Bu bölüm yalnızca çeviri okumak için `"use client"` yazılmıştı: hiçbir
+ * durumu, olayı ya da tarayıcı API'si yok — düz biçimlendirme. Bedeli, iki
+ * dilin tamamının bu bölümü içeren her sayfaya paket olarak gitmesiydi.
+ * Metin artık sunucuda çözülüyor (`lib/i18n/server.ts`).
+ */
+export default async function Footer() {
+  const { t } = getTranslations();
 
   return (
     <footer className="relative overflow-hidden bg-void border-t border-line pt-20 pb-10">

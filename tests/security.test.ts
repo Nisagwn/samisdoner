@@ -10,6 +10,7 @@ import {
   passwordProblem,
   verifyPassword,
 } from "@/lib/account/password";
+import { hashToken } from "@/lib/account/passwordReset";
 import { parseCartLines, parseLang } from "@/lib/cartLines";
 
 /**
@@ -219,5 +220,43 @@ describe("sepet girdisi ayıklama", () => {
     expect(parseLang("tr")).toBe("tr");
     expect(parseLang("en")).toBe("tr");
     expect(parseLang(null)).toBe("tr");
+  });
+});
+
+/* ------------------------------------------------ parola sıfırlama jetonu */
+
+describe("parola sıfırlama jetonu özeti", () => {
+  it("aynı jeton için her zaman aynı özeti üretir", async () => {
+    // Arama özet üzerinden yapılıyor (`tokenHash` @unique); deterministik
+    // olmasaydı üretilen jeton hiçbir zaman bulunamazdı.
+    const token = "ornek-jeton-0123456789abcdef";
+    expect(await hashToken(token)).toBe(await hashToken(token));
+  });
+
+  it("farklı jetonlar farklı özet üretir", async () => {
+    expect(await hashToken("jeton-a")).not.toBe(await hashToken("jeton-b"));
+  });
+
+  it("özet jetonun kendisini içermez", async () => {
+    // Veritabanı sızarsa saklanan değerden jeton üretilememeli.
+    const token = "cok-gizli-jeton-degeri-123456";
+    const hash = await hashToken(token);
+    expect(hash).not.toContain(token);
+    expect(hash.length).toBeGreaterThan(20);
+  });
+
+  it("tek karakterlik fark bambaşka bir özet verir", async () => {
+    const a = await hashToken("jeton-0123456789abcdefghij");
+    const b = await hashToken("jeton-0123456789abcdefghik");
+    expect(a).not.toBe(b);
+    // İlk karakterlerin bile örtüşmemesi beklenir (çığ etkisi).
+    expect(a.slice(0, 8)).not.toBe(b.slice(0, 8));
+  });
+
+  it("özet URL'de taşınabilir biçimdedir", async () => {
+    // base64url: "+", "/" ve "=" yok — jeton bağlantıda, özet sütunda durur
+    // ve ikisinin de kaçış gerektirmemesi kayıt/arama yollarını basitleştirir.
+    const hash = await hashToken("herhangi-bir-jeton-1234567890");
+    expect(hash).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });

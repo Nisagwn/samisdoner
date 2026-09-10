@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Fulfillment, OrderStatus, PaymentStatus } from "@prisma/client";
 import { formatCents } from "@/lib/money";
-import { ADMIN_STATUS_LABELS, isTerminal, nextStatuses } from "@/lib/orders/status";
+import { ADMIN_STATUS_LABELS, isTerminal, needsRefund, nextStatuses } from "@/lib/orders/status";
 import { CANCEL_REASONS, adminCancelLabel } from "@/lib/orders/cancelReasons";
 import { playOrderAlert, unlockAudio } from "@/lib/kitchenAudio";
 import { useScrollLock } from "@/lib/useScrollLock";
@@ -449,6 +449,14 @@ export default function OrderFeed() {
         <CancelDialog
           orderNo={cancelling.order.orderNo}
           status={cancelling.status}
+          /* İade, geçişin kaynağına bakar: ödemesi hiç alınmamış siparişte
+             (PENDING_PAYMENT / EXPIRED) iade edilecek para yoktur. */
+          refundCents={
+            needsRefund(cancelling.order.status) &&
+            cancelling.order.paymentStatus === "PAID"
+              ? cancelling.order.totalCents
+              : 0
+          }
           busy={busy === cancelling.order.id}
           onCancel={() => setCancelling(null)}
           onConfirm={confirmCancel}
@@ -679,12 +687,15 @@ function OrderCard({
 function CancelDialog({
   orderNo,
   status,
+  refundCents,
   busy,
   onCancel,
   onConfirm,
 }: {
   orderNo: string;
   status: OrderStatus;
+  /** İade edilecek tutar; 0 ise ödeme alınmamış demektir ve iade yapılmaz. */
+  refundCents: number;
   busy: boolean;
   onCancel: () => void;
   onConfirm: (reasonId: string, reasonNote: string) => void;
@@ -794,6 +805,29 @@ function CancelDialog({
           </div>
         )}
 
+        {/*
+          Para uyarısı.
+
+          Onay penceresinin buraya kadar olan kısmı "müşteri ne görecek"i
+          anlatıyor; bu blok "kasadan ne çıkacak"ı. İkisi ayrı sorulardır ve
+          iade geri alınamaz — tutar, onaya basmadan önce ekranda görünmeli.
+        */}
+        {refundCents > 0 ? (
+          <div className="mt-4 border border-flame/60 bg-flame/10 px-4 py-3">
+            <p className="tag text-flame">Para iadesi</p>
+            <p className="mt-1.5 text-sm text-bone">
+              Onaylarsanız <strong>{formatCents(refundCents)}</strong> müşteriye
+              iade edilecek. Bu işlem geri alınamaz.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 border border-line bg-void px-4 py-3">
+            <p className="text-xs leading-relaxed text-smoke">
+              Bu siparişin ödemesi alınmadığı için iade yapılmayacak.
+            </p>
+          </div>
+        )}
+
         <div className="mt-8 flex flex-wrap justify-end gap-3 border-t border-line pt-6">
           <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
             VAZGEÇ
@@ -801,9 +835,11 @@ function CancelDialog({
           <Button type="submit" variant="danger" disabled={!ready || busy}>
             {busy
               ? "GÖNDERİLİYOR…"
-              : status === "REJECTED"
-                ? "REDDET VE MÜŞTERİYE BİLDİR"
-                : "İPTAL ET VE MÜŞTERİYE BİLDİR"}
+              : refundCents > 0
+                ? `${status === "REJECTED" ? "REDDET" : "İPTAL ET"} VE ${formatCents(refundCents)} İADE ET`
+                : status === "REJECTED"
+                  ? "REDDET VE MÜŞTERİYE BİLDİR"
+                  : "İPTAL ET VE MÜŞTERİYE BİLDİR"}
           </Button>
         </div>
       </form>

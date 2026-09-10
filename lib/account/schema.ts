@@ -95,3 +95,25 @@ export const deleteAccountSchema = z.object({
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
+
+/**
+ * Parola sıfırlama isteği.
+ *
+ * Yalnızca e-posta. Kullanıcının hesabı olup olmadığı **cevapta söylenmez**
+ * (bkz. `app/api/account/password-reset/route.ts`); şema burada yalnızca
+ * adresin biçimini kontrol eder.
+ */
+export const passwordResetRequestSchema = z.object({
+  email: emailSchema,
+});
+
+/**
+ * Sıfırlamanın tamamlanması.
+ *
+ * Jeton bağlantıdan gelir; uzunluğu sınırlıdır çünkü doğrulama onu SHA-256'dan
+ * geçirecek ve sınırsız uzunlukta bir girdi bedava CPU tüketimi olurdu.
+ */
+export const passwordResetConfirmSchema = z.object({
+  token: z.string().trim().min(20).max(200),
+  password: passwordSchema,
+});
