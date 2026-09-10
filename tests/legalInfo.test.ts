@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { parseCategoryPatch, parseProductBody } from "@/lib/admin/validate";
-import { ADDITIVES, ALLERGENS, VAT_RATES, hasLegalInfo } from "@/lib/admin/types";
+import { VAT_RATES } from "@/lib/admin/types";
 
 /**
  * Ürünün yasal bilgi alanlarının doğrulanması.
  *
- * Bu alanlar (`allergens`, `additives`, `vatRate`, `allergenInfoConfirmed`,
- * `isPerishable`) gövdeden **sessizce düşüyordu**: depo katmanı onları yazmaya
- * hazırdı ama doğrulayıcı tanımıyordu, dolayısıyla panelden gönderilen her
- * değer kayboluyordu.
+ * Geriye iki alan kaldı: `vatRate` ve `isPerishable`. İkisi de gövdeden
+ * **sessizce düşüyordu** — depo katmanı onları yazmaya hazırdı ama doğrulayıcı
+ * tanımıyordu; bu dosyanın varlık sebebi o hatanın geri gelmemesi.
  *
- * Buradaki en önemli test "sessiz düşme yok" olanı. Alerjen alanında bir kodun
- * sessizce yutulması, işletmecinin glüteni işaretlediğini sanıp menüde hiçbir
- * şey görmemesi demektir; bu doğrudan bir sağlık riski, kozmetik bir hata değil.
+ * Ürün başına alerjen/katkı maddesi girişi kaldırıldı; alerjen bildirimi artık
+ * kartanın ve sipariş sayfasının altındaki tek uyarıdır. Aşağıda bunun bir
+ * testi var: gövdeye alerjen alanı konsa bile yamaya girmemeli, yoksa
+ * kaldırılmış bir alan panelden sessizce yazılmaya devam eder.
  */
 
 const CATEGORIES = ["doener", "getraenke"];
@@ -34,66 +34,20 @@ function body(extra: Record<string, unknown> = {}) {
   };
 }
 
-describe("ürün yasal bilgi doğrulaması", () => {
-  it("alerjen ve katkı maddesi listelerini kabul eder", () => {
+describe("kaldırılan alerjen alanları", () => {
+  it("gövdeden gelse bile yamaya girmez", () => {
     const result = parseProductBody(
-      body({ allergens: ["GLUTEN", "MILK"], additives: ["FARBSTOFF"] }),
+      body({ allergens: ["GLUTEN"], additives: ["FARBSTOFF"], allergenInfoConfirmed: true }),
       CATEGORIES,
       false
     );
+    // İstek reddedilmez: eski bir sekmeden ya da betikten gelen gövde yüzünden
+    // ürün kaydetmek imkânsız hale gelmemeli. Alanlar yalnızca yok sayılır.
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.allergens).toEqual(["GLUTEN", "MILK"]);
-    expect(result.value.additives).toEqual(["FARBSTOFF"]);
-  });
-
-  it("tanınmayan alerjen kodunu sessizce düşürmez, hata verir", () => {
-    const result = parseProductBody(body({ allergens: ["GLUTEN", "TOZ_SEKER"] }), CATEGORIES, false);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toContain("Alerjen");
-  });
-
-  it("tanınmayan katkı maddesi kodunu reddeder", () => {
-    const result = parseProductBody(body({ additives: ["E999"] }), CATEGORIES, false);
-    expect(result.ok).toBe(false);
-  });
-
-  it("liste yerine metin gelirse reddeder", () => {
-    const result = parseProductBody(body({ allergens: "GLUTEN" }), CATEGORIES, false);
-    expect(result.ok).toBe(false);
-  });
-
-  it("tekrar eden kodları teke indirir ve sabit listenin sırasına sokar", () => {
-    // Girişteki sıra ters ve MILK iki kez: aynı seçim her kayıtta aynı diziyi
-    // üretmeli, yoksa hiçbir şey değişmeden "değişti" görünür.
-    const result = parseProductBody(
-      body({ allergens: ["MILK", "GLUTEN", "MILK"] }),
-      CATEGORIES,
-      false
-    );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.allergens).toEqual(["GLUTEN", "MILK"]);
-  });
-
-  it("boş liste geçerlidir — 'madde yok' beyanı ayrı alandır", () => {
-    const result = parseProductBody(body({ allergens: [] }), CATEGORIES, false);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.allergens).toEqual([]);
-  });
-
-  it("bilinen her alerjen ve katkı maddesi kodunu kabul eder", () => {
-    const result = parseProductBody(
-      body({ allergens: [...ALLERGENS], additives: [...ADDITIVES] }),
-      CATEGORIES,
-      false
-    );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.allergens).toHaveLength(ALLERGENS.length);
-    expect(result.value.additives).toHaveLength(ADDITIVES.length);
+    expect(result.value).not.toHaveProperty("allergens");
+    expect(result.value).not.toHaveProperty("additives");
+    expect(result.value).not.toHaveProperty("allergenInfoConfirmed");
   });
 });
 
@@ -126,14 +80,11 @@ describe("KDV oranı", () => {
   });
 });
 
-describe("beyan ve bozulabilirlik bayrakları", () => {
-  it("yeni üründe beyan kapalı, çabuk bozulan açık başlar", () => {
+describe("bozulabilirlik bayrağı", () => {
+  it("yeni üründe çabuk bozulan açık başlar", () => {
     const result = parseProductBody(body(), CATEGORIES, false);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Beyan varsayılan olarak açık olsaydı, bilgi girilmemiş her ürün
-    // "madde yok" demiş sayılırdı.
-    expect(result.value.allergenInfoConfirmed).toBe(false);
     expect(result.value.isPerishable).toBe(true);
   });
 
@@ -141,38 +92,15 @@ describe("beyan ve bozulabilirlik bayrakları", () => {
     const result = parseProductBody({ name: "Cola" }, CATEGORIES, true);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.allergenInfoConfirmed).toBeUndefined();
     expect(result.value.isPerishable).toBeUndefined();
     expect(result.value.vatRate).toBeUndefined();
   });
 
-  it("kısmi güncellemede yalnızca alerjenler gönderilebilir", () => {
-    // Toplu alerjen ekranının yaptığı istek tam olarak budur.
-    const result = parseProductBody(
-      { allergens: ["SESAME"], allergenInfoConfirmed: true },
-      CATEGORIES,
-      true
-    );
+  it("içecekte kapatılabilir", () => {
+    // Kapalı şişe içecek § 312g Abs. 2 Nr. 1 BGB istisnasına girmez.
+    const result = parseProductBody({ isPerishable: false }, CATEGORIES, true);
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.allergens).toEqual(["SESAME"]);
-    expect(result.value.allergenInfoConfirmed).toBe(true);
-    expect(result.value.name).toBeUndefined();
-  });
-});
-
-describe("hasLegalInfo", () => {
-  it("alerjen işaretliyse bilgi tamdır", () => {
-    expect(hasLegalInfo({ allergens: ["GLUTEN"], allergenInfoConfirmed: false })).toBe(true);
-  });
-
-  it("liste boş ama beyan varsa bilgi tamdır", () => {
-    expect(hasLegalInfo({ allergens: [], allergenInfoConfirmed: true })).toBe(true);
-  });
-
-  it("liste boş ve beyan yoksa bilgi eksiktir", () => {
-    // İki hâlin ayrımı budur: "girilmedi" ile "yok" aynı şey değil.
-    expect(hasLegalInfo({ allergens: [], allergenInfoConfirmed: false })).toBe(false);
+    if (result.ok) expect(result.value.isPerishable).toBe(false);
   });
 });
 

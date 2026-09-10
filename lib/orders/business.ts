@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { CACHE_KEYS, invalidate } from "@/lib/cache";
 
 /**
  * İşletme ayarlarının veri katmanı — panel tarafı.
@@ -81,6 +82,10 @@ export async function updateBusinessSettings(
     update: data,
   });
 
+  // Acil kapatma anahtarı burada: önbellek düşmezse "sipariş almayı durdur"
+  // düğmesi dakikalarca etkisiz kalır ve müşteri sipariş vermeye devam eder.
+  await invalidate(CACHE_KEYS.orderSettings, CACHE_KEYS.catalog);
+
   return {
     orderingEnabled: row.orderingEnabled,
     deliveryEnabled: row.deliveryEnabled,
@@ -113,6 +118,7 @@ export async function replaceOpeningHours(
     prisma.openingHour.deleteMany({}),
     prisma.openingHour.createMany({ data: rows }),
   ]);
+  await invalidate(CACHE_KEYS.openingHours);
   return listOpeningHours();
 }
 
@@ -143,12 +149,14 @@ export async function upsertClosure(date: string, reason: string): Promise<Closu
     create: { date: day, reason },
     update: { reason },
   });
+  await invalidate(CACHE_KEYS.closures);
   return { id: row.id, date: row.date.toISOString().slice(0, 10), reason: row.reason };
 }
 
 export async function deleteClosure(id: string): Promise<boolean> {
   try {
     await prisma.specialClosure.delete({ where: { id } });
+    await invalidate(CACHE_KEYS.closures);
     return true;
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {

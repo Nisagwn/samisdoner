@@ -13,6 +13,13 @@
 
 generator client {
   provider = "prisma-client-js"
+
+  // Sorgu motoru **ikili** bir dosyadır ve hedef işletim sistemine göre seçilir.
+  // Geliştirme Windows'ta ("native"), canlı Docker kabı Debian bookworm +
+  // OpenSSL 3.0 üzerinde çalışıyor. İkincisi yazılmazsa imaj derlenir ama ilk
+  // sorguda "Query engine library for current platform could not be found"
+  // hatasıyla düşer.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 // Supabase iki ayrı bağlantı ister:
@@ -80,14 +87,16 @@ model Product {
   /// >=%75 inek sütü içeren içecekler ve musluk suyu %7.
   vatRate Int @default(7)
 
-  /// LMIV Art. 14/44: zorunlu gıda bilgisi sipariş bağlayıcı hale gelmeden
-  /// ÖNCE verilmek zorunda. Açık satılan üründe (döner) de geçerli.
+  /// KULLANIM DIŞI — ürün başına alerjen girişi kaldırıldı.
+  ///
+  /// Menüde artık ürün başına harf/rakam kodu yok; alerjen bildirimi kartanın
+  /// ve sipariş sayfasının altında tek bir uyarı olarak duruyor
+  /// (`components/legal/AllergenWarning.tsx`). Sütunlar **silinmedi**: girilmiş
+  /// veri duruyor ve ürün başına bildirime dönülmesi gerekirse (LMIV Art. 14
+  /// mesafeli satışta bunu ister) göç gerektirmeden geri açılabilir. Uygulama
+  /// bu üç alanı okumuyor ve yazmıyor.
   allergens             Allergen[]
-  /// ZZulV: katkı maddesi sınıfları yazılı bildirilmek zorunda;
-  /// "personele sorun" yeterli değil.
   additives             Additive[]
-  /// Boş liste "bilgi girilmedi" ile "madde yok" arasında ayrım yapamaz.
-  /// Bu bayrak işletmecinin bilinçli "yok" beyanını kaydeder.
   allergenInfoConfirmed Boolean    @default(false)
 
   /// § 312g Abs. 2 BGB — çabuk bozulan hazır yemekte cayma hakkı istisnası.
@@ -115,13 +124,15 @@ model Variant {
 }
 
 /**
- * ─────────────────────────────────────────────────────── döner yapılandırıcı
+ * ─────────────────────────────────────── döner yapılandırıcı (KULLANIM DIŞI)
+ *
+ * "Kendin Seç" bölümü siteden ve panelden kaldırıldı: müşteri dönerini
+ * malzeme malzeme kurmak yerine menüden sipariş ediyor. Aşağıdaki iki tablo
+ * ve `BuilderMode` enum'u **silinmedi** — girilmiş seçenek/ek ücret verisi
+ * duruyor, bölüm geri gelirse göç gerekmez. Uygulama bunları okumuyor.
  */
 
 model BuilderGroup {
-  /// "bread" | "protein" | "veggies" | "sauce" — kimlikler kod tarafından
-  /// belirlenir, arayüz onlara göre kuruludur. Panelden yalnızca seçeneklerin
-  /// metni ve ek ücreti değişir.
   id        String          @id
   mode      BuilderMode
   sortOrder Int             @default(0)
@@ -160,7 +171,8 @@ model Settings {
   /// Bu tutarın üstünde servis ücreti alınmaz. 0 = eşik yok.
   freeServiceOverCents Int @default(0)
 
-  /// Yapılandırıcının taban fiyatını okuduğu katalog ürünü.
+  /// KULLANIM DIŞI — kaldırılan yapılandırıcının taban fiyat ayarı.
+  /// Bkz. BuilderGroup üzerindeki not.
   builderBaseProductId      String?
   builderFallbackPriceCents Int     @default(0)
 
@@ -564,6 +576,8 @@ enum BuilderMode {
 
 enum LineKind {
   PRODUCT
+  /// Yalnızca geçmiş siparişlerde. Yeni satır her zaman PRODUCT olur; sipariş
+  /// kayıtları append-only olduğu için değer şemadan kaldırılamaz.
   BUILDER
 }
 
@@ -607,6 +621,7 @@ enum AdminRole {
 }
 
 /// LMIV Ek II — bildirimi zorunlu 14 alerjen.
+/// KULLANIM DIŞI: yalnızca Product.allergens sütununun tipi. Bkz. oradaki not.
 enum Allergen {
   GLUTEN
   CRUSTACEANS
@@ -625,6 +640,7 @@ enum Allergen {
 }
 
 /// ZZulV — kenntlichmachungspflichtige 14 katkı maddesi sınıfı.
+/// KULLANIM DIŞI: yalnızca Product.additives sütununun tipi.
 enum Additive {
   FARBSTOFF
   KONSERVIERUNGSSTOFF

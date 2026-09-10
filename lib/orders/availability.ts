@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { CACHE_KEYS, cached } from "@/lib/cache";
 
 /**
  * Siparişin kabul edilip edilmeyeceğine dair kurallar.
@@ -6,7 +7,22 @@ import { prisma } from "@/lib/db";
  * Hepsi sunucuda çalışır. Arayüz aynı kuralları önden gösterir (kapalıyken
  * "şu an kapalıyız" der), ama **karar burada verilir**: istemci tarafı kontrol
  * atlatılabilir, bu katman atlatılamaz.
+ *
+ * ÖNBELLEK
+ *
+ * Bu dosyanın okuduğu üç tablo (ayarlar, çalışma saatleri, tatil günleri,
+ * teslimat bölgeleri) haftada bir bile değişmez, ama sepet çekmecesi her
+ * açıldığında (`/api/menu/status`) ve her fiyat teklifinde okunur. Bu yüzden
+ * **satırlar** önbelleklenir, karar değil: "açık mı" sorusunun cevabı dakikadan
+ * dakikaya değişir, oysa saat tablosu değişmez. Kararı hep taze saatle yerelde
+ * hesaplamak, hem doğru hem bedava.
+ *
+ * Panelden yapılan yazmalar (`lib/orders/business.ts`, `lib/orders/zones.ts`)
+ * ilgili anahtarı düşürür.
  */
+
+/** Nadiren değişen işletme verisinin önbellekte kalma süresi. */
+const BUSINESS_MAX_AGE_SECONDS = 300;
 
 const TIME_ZONE = "Europe/Berlin";
 
@@ -70,6 +86,35 @@ function berlinNow(now: Date = new Date()): {
   };
 }
 
+/** Haftalık çalışma saatleri — yedi günün tamamı, önbellekten. */
+function weeklyHours(): Promise<{ weekday: number; openMinute: number; closeMinute: number }[]> {
+  return cached(CACHE_KEYS.openingHours, BUSINESS_MAX_AGE_SECONDS, () =>
+    prisma.openingHour.findMany({
+      select: { weekday: true, openMinute: true, closeMinute: true },
+    })
+  );
+}
+
+/**
+ * Bugünden itibaren kapalı günler ("2026-12-24" biçiminde).
+ *
+ * Tek bir güne bakmak yerine tüm liste önbelleklenir: tatil günleri bir avuç
+ * satırdır ve günlük anahtar kullanmak, panelden tatil eklendiğinde hangi
+ * günün anahtarının düşürüleceğini takip etmeyi gerektirirdi.
+ */
+function upcomingClosures(): Promise<string[]> {
+  return cached(CACHE_KEYS.closures, BUSINESS_MAX_AGE_SECONDS, async () => {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const rows = await prisma.specialClosure.findMany({
+      where: { date: { gte: today } },
+      select: { date: true },
+    });
+    return rows.map((row) => row.date.toISOString().slice(0, 10));
+  });
+}
+
 /**
  * Verilen anda dükkân açık mı.
  *
@@ -81,15 +126,14 @@ export async function isOpenNow(now: Date = new Date()): Promise<boolean> {
 
   const { weekday, minutes, isoDate } = berlinNow(now);
 
-  const closure = await prisma.specialClosure.findUnique({
-    where: { date: new Date(`${isoDate}T00:00:00.000Z`) },
-    select: { id: true },
-  });
-  if (closure) return false;
+  const [closedDays, allHours] = await Promise.all([upcomingClosures(), weeklyHours()]);
 
-  const hours = await prisma.openingHour.findMany({
-    where: { weekday: { in: [weekday, (weekday + 6) % 7] } },
-  });
+  if (closedDays.includes(isoDate)) return false;
+
+  // Dünün gece yarısını aşan aralığı bugüne sarkabilir; iki gün birden bakılır.
+  const hours = allHours.filter(
+    (h) => h.weekday === weekday || h.weekday === (weekday + 6) % 7
+  );
 
   return hours.some((h) => {
     const wraps = h.closeMinute <= h.openMinute;
@@ -110,18 +154,30 @@ export type DeliveryZoneInfo = {
   etaMinutes: number;
 };
 
-/** Posta kodu teslimat bölgesinde mi; değilse null. */
+/**
+ * Posta kodu teslimat bölgesinde mi; değilse null.
+ *
+ * Bölge listesi bir avuç satırdır (dükkânın dağıtım yaptığı mahalleler) ve
+ * tamamı tek anahtarda önbelleklenir. Posta kodu başına ayrı anahtar tutmak,
+ * bölge silindiğinde hangi anahtarın düşeceğini izlemeyi gerektirir — üstelik
+ * bölgede **olmayan** posta kodları önbelleği sonsuz büyütürdü.
+ */
 export async function findDeliveryZone(zip: string): Promise<DeliveryZoneInfo | null> {
-  const zone = await prisma.deliveryZone.findUnique({ where: { postalCode: zip.trim() } });
-  if (!zone || !zone.active) return null;
-  return {
-    postalCode: zone.postalCode,
-    city: zone.city,
-    minOrderCents: zone.minOrderCents,
-    feeCents: zone.feeCents,
-    freeOverCents: zone.freeOverCents,
-    etaMinutes: zone.etaMinutes,
-  };
+  const zones = await cached(CACHE_KEYS.zones, BUSINESS_MAX_AGE_SECONDS, () =>
+    prisma.deliveryZone.findMany({
+      where: { active: true },
+      select: {
+        postalCode: true,
+        city: true,
+        minOrderCents: true,
+        feeCents: true,
+        freeOverCents: true,
+        etaMinutes: true,
+      },
+    })
+  );
+
+  return zones.find((zone) => zone.postalCode === zip.trim()) ?? null;
 }
 
 /**
@@ -138,14 +194,16 @@ export function deliveryFeeFor(zone: DeliveryZoneInfo, subtotalCents: number): n
 
 /** İşletme ayarlarının sipariş akışını ilgilendiren kısmı. */
 export async function getOrderSettings() {
-  const settings = await prisma.settings.findUnique({ where: { id: 1 } });
-  return {
-    orderingEnabled: settings?.orderingEnabled ?? true,
-    deliveryEnabled: settings?.deliveryEnabled ?? true,
-    pickupEnabled: settings?.pickupEnabled ?? false,
-    cashEnabled: settings?.cashEnabled ?? false,
-    prepMinutes: settings?.prepMinutes ?? 30,
-  };
+  return cached(CACHE_KEYS.orderSettings, BUSINESS_MAX_AGE_SECONDS, async () => {
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } });
+    return {
+      orderingEnabled: settings?.orderingEnabled ?? true,
+      deliveryEnabled: settings?.deliveryEnabled ?? true,
+      pickupEnabled: settings?.pickupEnabled ?? false,
+      cashEnabled: settings?.cashEnabled ?? false,
+      prepMinutes: settings?.prepMinutes ?? 30,
+    };
+  });
 }
 
 /** Sipariş reddedilme sebepleri — arayüz bunları kendi diline çevirir. */

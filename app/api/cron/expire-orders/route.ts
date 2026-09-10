@@ -18,13 +18,18 @@ import { reconcileStalePendingOrders } from "@/lib/orders/reconcile";
  * Koruma **zorunludur**: `CRON_SECRET` tanımlı değilse uç hiç çalışmaz. Açık
  * bırakılan bir yönetim ucu, herkesin sipariş kapatabildiği bir düğmedir.
  *
- * Zamanlama `vercel.json` dosyasında tanımlıdır (15 dakikada bir). Vercel
- * isteğe `Authorization: Bearer $CRON_SECRET` başlığını kendisi ekler; aynı
- * başlıkla elle de çağrılabilir:
+ * Zamanlama `vercel.json` dosyasında tanımlıdır. Vercel isteğe
+ * `Authorization: Bearer $CRON_SECRET` başlığını kendisi ekler; aynı başlıkla
+ * elle de çağrılabilir:
  *   curl -H "Authorization: Bearer $CRON_SECRET" .../api/cron/expire-orders
  *
- * Aralık, ödeme penceresinden (31 dk) belirgin biçimde kısa olmalı: aksi hâlde
- * süresi dolan bir sipariş bir sonraki taramaya kadar panelde asılı kalır.
+ * **Aralık ödeme penceresinden (31 dk) çok uzun: günde bir (03:00).** Vercel
+ * Hobby planı daha sıksını çalıştırmıyor. Bu yüzden bu uç tek başına yeterli
+ * değildir ve olması da beklenmez: müşterinin kendi takip sayfası ödemeyi
+ * `/api/orders/sync` üzerinden yokluyor ve `reconcileOrderPayment` ödemesiz
+ * kalmış siparişi penceresi kapandığı anda kapatıyor. Buradaki tarama, o yolu
+ * hiç kullanmayan siparişler (sekmesini hiç açmayan müşteri) için ağdır.
+ * Plan ücretli sürüme geçerse zamanlama tekrar 15 dakikaya çekilebilir.
  */
 
 export const runtime = "nodejs";
@@ -58,7 +63,9 @@ export async function GET(request: Request) {
 
   // Önce mutabakat: ödemesi alınmış ama webhook'u ulaşmamış bir siparişi
   // EXPIRED'a taşımak, karşılığı teslim edilmeyen bir tahsilat bırakırdı.
-  const settled = await reconcileStalePendingOrders();
-  const expired = await expireStaleOrders();
-  return NextResponse.json({ ok: true, settled, expired });
+  // Cevabı alınan siparişleri mutabakat adımı kendisi kapatır; ikinci adım
+  // yalnızca sağlayıcıya hiç ulaşılamayanlar için son çare olarak kalır.
+  const { settled, expired } = await reconcileStalePendingOrders();
+  const forced = await expireStaleOrders();
+  return NextResponse.json({ ok: true, settled, expired, forced });
 }

@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "trustedDependencies": [
     "@prisma/client",
-    "prisma"
+    "@prisma/engines",
+    "prisma",
+    "sharp"
   ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -22,18 +24,25 @@
     "test:watch": "vitest",
     "verify:flow": "tsx scripts/verify-flow.ts",
     "dev:webpack": "node scripts/dev.mjs --webpack",
-    "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
-    "dev:stripe": "node scripts/stripe-listen.mjs"
+    "clean": "node -e \"for (const d of ['.next','.next-dev']) require('fs').rmSync(d,{recursive:true,force:true})\"",
+    "dev:stripe": "node scripts/stripe-listen.mjs",
+    "docker:dev": "docker compose up -d",
+    "docker:dev:down": "docker compose down",
+    "docker:prod": "docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build",
+    "docker:prod:logs": "docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f",
+    "docker:prod:down": "docker compose -f docker-compose.prod.yml --env-file .env.prod down"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "clsx": "^2.1.1",
     "gsap": "^3.12.5",
+    "ioredis": "^5.4.1",
     "lenis": "^1.1.13",
     "next": "14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "resend": "^6.26.0",
+    "sharp": "^0.33.5",
     "stripe": "^22.6.1",
     "zod": "^4.5.4"
   },

@@ -204,13 +204,11 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
   );
 
   return (
-    <div className="max-w-[1000px] min-w-0">
+    <div className="min-w-0">
+      {/* Sayfa başlığı kabuğa ait; burası ekranın ikinci bölümü. */}
       <header className="mb-8">
-        <p className="tag text-flame mb-2">Sipariş</p>
-        <h1 className="font-display font-extrabold text-3xl md:text-4xl text-bone">
-          Teslimat bölgeleri
-        </h1>
-        <p className="text-sm text-smoke mt-3 leading-relaxed">
+        <h2 className="font-display text-lg font-bold text-bone">Teslimat bölgeleri</h2>
+        <p className="mt-2 text-sm leading-relaxed text-smoke">
           Sipariş yalnızca bu listedeki posta kodlarına verilebilir. Listede olmayan
           ya da kapatılmış bir posta kodu girildiğinde müşteriye &quot;bu bölgeye
           teslimat yapılmıyor&quot; denir.

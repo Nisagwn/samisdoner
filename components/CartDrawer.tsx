@@ -149,22 +149,15 @@ export default function CartDrawer() {
           {lines.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <p className="text-sm text-smoke">{t.cart.empty}</p>
-              {/* Boş sepetin çıkışı menüdür, yapılandırıcı değil: menü tüm
-                  ürünleri kapsar, yapılandırıcı yalnızca döneri. Kendi
-                  dönerini kurmak isteyen ikinci bağlantıyı kullanır. */}
+              {/* Boş sepetin tek çıkışı menüdür. Yanında bir de "kendi
+                  dönerini kur" bağlantısı vardı; o bölüm kaldırıldı ve tek
+                  düğme kaldı. */}
               <a
                 href="/speisekarte"
                 onClick={closeCart}
                 className="focus-ring tag inline-flex min-h-[44px] items-center border border-amber bg-amber/10 px-4 text-amber transition-colors hover:bg-amber hover:text-void"
               >
                 {t.nav.menu} →
-              </a>
-              <a
-                href="/#builder"
-                onClick={closeCart}
-                className="focus-ring tag inline-flex min-h-[44px] items-center border border-line px-4 text-smoke transition-colors hover:border-amber hover:text-amber"
-              >
-                {t.cart.buildBtn}
               </a>
             </div>
           ) : (

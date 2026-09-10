@@ -8,21 +8,55 @@ yok.
 
 ## Kurulum
 
+Veritabanı ve önbellek Docker'da çalışır; uygulama makinede.
+
 ```bash
-npm install
-npm run dev
+bun install
+cp .env.example .env.local      # gizli anahtarları doldur
+
+docker compose up -d            # Postgres + Redis
+bun run db:deploy               # göçleri uygula (şemayı kur)
+bun run db:seed                 # menüyü ve işletme bilgisini yaz
+
+bun dev
 ```
 
 Tarayıcıda `http://localhost:3000` adresini aç.
+Durum kontrolü: `http://localhost:3000/api/health`
+
+> Veritabanı neden yerel: uzak Supabase'e (Frankfurt) her sorgu ~87–450 ms
+> sürüyordu ve bir sayfa birkaç sorgu atıyor. Aynı makinedeki Postgres'te bu
+> ~1 ms. Supabase'e dönmek isterseniz `.env.example` içindeki yorumlu adresleri
+> kullanın.
 
 Production build:
 
 ```bash
-npm run build
-npm run start
+bun run build
+bun run start
 ```
 
-> Not: `npm run build` sırasında Google Fonts'a (Unbounded, JetBrains Mono,
+> `bun run start` şu uyarıyı yazar: *"next start" does not work with "output:
+> standalone"*. Yerelde zararsızdır, sunucu düzgün çalışır — uyarı, standalone
+> çıktısının kendi sunucusunun (`.next/standalone/server.js`) kullanılmadığını
+> söyler. Canlıda Docker imajı zaten o sunucuyu çalıştırır.
+
+Geliştirme `.next-dev`, derleme `.next` dizinine yazar; bu yüzden dev sunucusu
+açıkken derleme yapabilirsiniz (aynı dizini paylaştıklarında turbopack artıkları
+webpack derlemesini bozuyordu).
+
+## Canlıya alma
+
+Tüm yığın Docker'da: Caddy (otomatik HTTPS) + uygulama + Postgres + Redis +
+günlük yedek + zamanlanmış görev. Mimarinin gerekçeleri, sunucu kurulumu, yedek
+ve geri yükleme adımları: **[deploy/README.md](deploy/README.md)**
+
+```bash
+cp .env.prod.example .env.prod && nano .env.prod
+bun run docker:prod
+```
+
+> Not: `bun run build` sırasında Google Fonts'a (Unbounded, JetBrains Mono,
 > Inter) internet üzerinden erişilir. İnternetsiz bir CI ortamında build
 > alıyorsanız `app/layout.tsx` içindeki `next/font/google` importlarını
 > self-hosted font dosyalarıyla değiştirin.
@@ -39,11 +73,10 @@ components/
   Hero.tsx             Şiş görseli + GSAP giriş animasyonu + HUD etiketleri
   AssemblyLog.tsx      Pinlenmiş scrollytelling: 8 malzeme sırayla "inşa" oluyor
   FinalStack.tsx       Patlamış sandviç görseli, clip-path reveal + istatistikler
-  OrderBuilder.tsx     "Kendi Dönerini İnşa Et" — gerçek sipariş/sepet mantığı
-  MenuGrid.tsx         Sabit menü kartları (her menünün kendi fotoğrafı)
+  MenuGrid.tsx         Karta: kategori kategori ürün listesi, sepete ekleme
   Footer.tsx           İletişim/konum
 data/
-  menu.ts              Ekmek/et/sebze/sos seçenekleri, fiyatlar, sabit menüler
+  speisekarte.ts       Kartanın veri şekli (menünün kendisi panelden gelir)
 public/assets/
   hero-fire.webp        Hero tam kaplama arka planı: ateş karşısında dönen şiş
   final-stack.webp       Patlamış sandviç fotoğrafınız (tam)
@@ -57,8 +90,7 @@ public/assets/
 
 - **Malzeme flatlay fotoğrafı** (Gemini) 8 parçaya ayrıldı, beyaz arka planı
   piksel bazlı alfa geçişiyle şeffaflaştırıldı → `AssemblyLog` bölümünde her
-  malzeme scroll'a bağlı olarak sahneye "uçarak" giriyor ve `OrderBuilder`
-  panelinde seçimlerinizi canlı önizleme olarak katman katman gösteriyor.
+  malzeme scroll'a bağlı olarak sahneye "uçarak" giriyor.
 - **Patlamış sandviç fotoğrafı** (ChatGPT) bütün halde `FinalStack`
   bölümünde clip-path ile scroll'a bağlı bir "kadraj açılıyor" efektiyle
   kullanılıyor.
@@ -70,7 +102,9 @@ public/assets/
 
 ## Değiştirmek isteyebilecekleriniz
 
-- `data/menu.ts` — fiyatlar, malzeme açıklamaları, sabit menüler
+- Ürünler, kategoriler ve fiyatlar **kodda değil**, yönetim panelinde:
+  `/admin/menu`. Servis ve teslimat ücretleri `/admin/zones`, çalışma saatleri
+  `/admin/betrieb`.
 - `tailwind.config.ts` — renk paleti (`flame`, `amber`, `void`, `char`)
 - `components/Footer.tsx` — adres/telefon/saatler
 - Fontlar `app/layout.tsx` içinde `next/font/google` ile tanımlı; marka

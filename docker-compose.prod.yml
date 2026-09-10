@@ -1,0 +1,216 @@
+# Sami's Döner — canlı yığın. Almanya'daki tek bir sunucuda çalışır.
+#
+#   internet → caddy (443, otomatik TLS) → app (3000)
+#                                            ├→ postgres  (aynı makine, ~0.5 ms)
+#                                            └→ redis     (önbellek)
+#                                          cron  → /api/cron/expire-orders
+#                                          backup → günlük pg_dump
+#
+# NEDEN TEK SUNUCU: sitede yoğun trafik yok. Bir döner dükkânının akşam
+# yoğunluğu dakikada birkaç siparişle ölçülür; bu yük tek bir 2 vCPU makineyi
+# zorlamaz. Buna karşılık veritabanının uygulamayla **aynı makinede** olması,
+# sorgu başına ~87 ms'lik ağ gidiş-gelişini ~0.5 ms'ye indirir. Ölçeklenebilirlik
+# değil, gecikme kazanılır — ve bu sitede hissedilen tek şey gecikmedir.
+#
+# NEDEN ALMANYA: sipariş kayıtları ad, adres ve telefon içerir. Veri Almanya'da
+# kalırsa DSGVO tarafında sınır ötesi aktarım sorusu hiç açılmaz.
+#
+# Kullanım:
+#   cp .env.prod.example .env.prod && nano .env.prod   → değerleri doldur
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f app
+
+name: doner
+
+services:
+  # ─────────────────────────────────────────────────────── ters vekil + TLS
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Caddyfile bu iki değeri okur; sertifikayı Let's Encrypt'ten kendisi alır.
+      DOMAIN: "${DOMAIN:?DOMAIN tanimlanmali - ornek samisdoener.de}"
+      LETSENCRYPT_EMAIL: "${LETSENCRYPT_EMAIL:?sertifika bildirimleri icin e-posta gerekli}"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Sertifikalar burada durur. Bu birim silinirse Let's Encrypt'in haftalık
+      # sertifika sınırına takılırsınız — yedeklenmese de silinmemeli.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # ────────────────────────────────────────────────────────────── uygulama
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    # Dışarı port açılmaz: uygulamaya yalnızca Caddy üzerinden gelinir.
+    expose:
+      - "3000"
+    environment:
+      # Uygulama havuzlayıcısız, doğrudan Postgres'e bağlanır: aynı makinede
+      # olduğu için havuzlayıcının çözdüğü sorun (uzaktan çok sayıda kısa ömürlü
+      # bağlantı) yok, eklediği gecikme ise var.
+      DATABASE_URL: "postgresql://doner:${POSTGRES_PASSWORD:?tanimlanmali}@postgres:5432/doner?connect_timeout=10"
+      DIRECT_URL: "postgresql://doner:${POSTGRES_PASSWORD}@postgres:5432/doner?connect_timeout=10"
+      REDIS_URL: "redis://redis:6379"
+      NODE_ENV: production
+      NEXT_PUBLIC_APP_URL: "https://${DOMAIN}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?tanimlanmali}"
+      ADMIN_SESSION_SECRET: "${ADMIN_SESSION_SECRET:?tanimlanmali}"
+      ORDER_TOKEN_SECRET: "${ORDER_TOKEN_SECRET:?tanimlanmali}"
+      CUSTOMER_SESSION_SECRET: "${CUSTOMER_SESSION_SECRET:?tanimlanmali}"
+      CRON_SECRET: "${CRON_SECRET:?tanimlanmali}"
+      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:?tanimlanmali}"
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:?tanimlanmali}"
+      RESEND_API_KEY: "${RESEND_API_KEY:-}"
+      ORDER_NOTIFY_EMAIL: "${ORDER_NOTIFY_EMAIL:-}"
+      ORDER_MAIL_FROM: "${ORDER_MAIL_FROM:-}"
+      LEGAL_COMPANY_NAME: "${LEGAL_COMPANY_NAME:-}"
+      LEGAL_REPRESENTATIVE: "${LEGAL_REPRESENTATIVE:-}"
+      LEGAL_CONTACT_EMAIL: "${LEGAL_CONTACT_EMAIL:-}"
+      LEGAL_VAT_ID: "${LEGAL_VAT_ID:-}"
+      LEGAL_SUPERVISORY_AUTHORITY: "${LEGAL_SUPERVISORY_AUTHORITY:-}"
+      LEGAL_PRIVACY_CONTACT: "${LEGAL_PRIVACY_CONTACT:-}"
+      LEGAL_REGISTER_ENTRY: "${LEGAL_REGISTER_ENTRY:-}"
+    healthcheck:
+      # Sağlık ucu veritabanına bir sorgu atar; kap ayakta ama veritabanı
+      # yoksa trafiğe açılmaması gerekir.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # Soğuk başlangıçta ilk saniyeler sağlıksız sayılmasın.
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # ──────────────────────────────────────────── şema göçü (bir kez çalışır)
+  migrate:
+    build:
+      context: .
+      target: migrator
+    restart: "no"
+    environment:
+      DATABASE_URL: "postgresql://doner:${POSTGRES_PASSWORD}@postgres:5432/doner?connect_timeout=10"
+      DIRECT_URL: "postgresql://doner:${POSTGRES_PASSWORD}@postgres:5432/doner?connect_timeout=10"
+      # Yalnızca ilk kurulumda "true": var olan veritabanına tohum yazmak
+      # menüyü dosyadaki hâline geri döndürür.
+      SEED_ON_START: "${SEED_ON_START:-false}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────────────────────── veritabanı
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: doner
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: doner
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    # Port dışarı açılmaz. Veritabanına erişim yalnızca Docker ağı üzerinden;
+    # dışarıdan bakmak gerekirse SSH tüneli kullanılır:
+    #   ssh -L 5432:localhost:5432 sunucu   (önce port'u geçici olarak açarak)
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doner -d doner"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────────────────────────── önbellek
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Önbellek disk kalıcılığı istemez: yeniden başlatmada boş gelir, ilk
+    # istekler veritabanından doldurur. `maxmemory` bir üst sınır koyar ki
+    # önbellek büyüyüp uygulamanın belleğini yemesin; dolduğunda en az
+    # kullanılan anahtar atılır (`allkeys-lru`) — önbellek için doğru davranış.
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 128mb
+      - --maxmemory-policy
+      - allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ───────────────────────────────────────────────────── zamanlanmış görev
+  cron:
+    # Vercel'in cron'unun yerini alır (vercel.json artık kullanılmıyor).
+    # Vercel Hobby planı günde bir çalıştırmaya izin veriyordu; burada sınır yok,
+    # bu yüzden ödemesi yarım kalmış siparişler 15 dakikada bir temizlenir.
+    image: alpine:3.20
+    restart: unless-stopped
+    environment:
+      CRON_SECRET: "${CRON_SECRET}"
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache curl >/dev/null
+        echo "[cron] 15 dakikada bir /api/cron/expire-orders"
+        while true; do
+          sleep 900
+          curl -sS -m 30 -o /dev/null -w '[cron] expire-orders → %{http_code}\n' \
+            -H "Authorization: Bearer $$CRON_SECRET" \
+            http://app:3000/api/cron/expire-orders || echo "[cron] istek basarisiz"
+        done
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────────────────────────── yedek
+  backup:
+    # Günlük pg_dump → bütünlük sınavı → makine dışına kopya.
+    #
+    # Yedeksiz bir sipariş veritabanı, tek bir disk arızasında sekiz yıl
+    # saklanması gereken belgelerin (Buchungsbelege) kaybı demektir. Yalnızca
+    # sunucunun kendi diskinde duran yedek de aynı arızada gider; bu yüzden
+    # BACKUP_REMOTE tanımlıysa her yedek rclone ile dışarı taşınır.
+    build:
+      context: .
+      target: backup
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: "${POSTGRES_PASSWORD}"
+      BACKUP_KEEP_DAYS: "${BACKUP_KEEP_DAYS:-14}"
+      # Uzak hedef. Boşsa yalnızca yerel yedek alınır (uyarı verilmez, bu
+      # geçerli bir yapılandırmadır — ama canlıda doldurulmalı).
+      # Örnek: "storagebox:doner-yedek"  ya da  "b2:doner-yedek"
+      BACKUP_REMOTE: "${BACKUP_REMOTE:-}"
+      RCLONE_CONFIG: /config/rclone/rclone.conf
+    volumes:
+      - ./backups:/backups
+      # rclone yapılandırması ve (gerekiyorsa) SSH anahtarı. Dizin yoksa Docker
+      # boş olarak oluşturur; BACKUP_REMOTE de boşsa rclone hiç çağrılmaz.
+      - ./deploy/backup-secrets:/config/rclone:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

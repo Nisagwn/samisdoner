@@ -18,8 +18,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
  * Sepet.
  *
  * Önemli kural: sepet **fiyat tutmaz**. Yalnızca "ne seçildi, nereye, nasıl"
- * bilgisini (ürün kimliği / yapılandırıcı seçimleri, adet, teslim biçimi ve
- * posta kodu) saklar; tutarların tamamı `/api/menu/quote` ucundan, katalogtaki
+ * bilgisini (ürün kimliği, boy, adet, teslim biçimi ve posta kodu) saklar; tutarların tamamı `/api/menu/quote` ucundan, katalogtaki
  * güncel fiyatlardan gelir — teslimat ücreti ve genel toplam dahil.
  *
  * Bunun üç sonucu var:
@@ -32,12 +31,6 @@ export type CartLine = CartLineInput;
 
 /** Satırı sepette benzersiz kılan anahtar; sunucudaki karşılığıyla aynı biçim. */
 export function lineKey(line: CartLine): string {
-  if (line.kind === "builder") {
-    return `builder:${line.bread}|${line.protein}|${line.sauce}|${line.veggies
-      .slice()
-      .sort()
-      .join(",")}`;
-  }
   return `product:${line.productId}|${line.variantSize ?? ""}`;
 }
 
@@ -100,25 +93,15 @@ function sanitize(value: unknown): CartLine[] {
       MAX_QTY,
       Math.max(1, Math.floor(typeof line.qty === "number" ? line.qty : 1))
     );
-    if (line.kind === "builder") {
-      if (
-        typeof line.bread !== "string" ||
-        typeof line.protein !== "string" ||
-        typeof line.sauce !== "string"
-      ) {
-        continue;
-      }
-      out.push({
-        kind: "builder",
-        bread: line.bread,
-        protein: line.protein,
-        sauce: line.sauce,
-        veggies: Array.isArray(line.veggies)
-          ? line.veggies.filter((v): v is string => typeof v === "string")
-          : [],
-        qty,
-      });
-    } else if (line.kind === "product" && typeof line.productId === "string") {
+    /*
+     * Yalnızca ürün satırı tanınır.
+     *
+     * Kaldırılan "Kendin Seç" bölümünün kendi satır türü vardı ve o satırlar
+     * hâlâ ziyaretçilerin localStorage'ında duruyor olabilir. Burada
+     * tanınmadıkları için sessizce düşerler — sepette fiyatlanamayacak bir
+     * satır bırakmaktan iyisi bu.
+     */
+    if (line.kind === "product" && typeof line.productId === "string") {
       out.push({
         kind: "product",
         productId: line.productId,

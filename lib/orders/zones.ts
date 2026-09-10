@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { CACHE_KEYS, invalidate } from "@/lib/cache";
 
 /**
  * Teslimat bölgelerinin veri katmanı — panel tarafı.
@@ -33,7 +34,9 @@ export async function listDeliveryZones(): Promise<DeliveryZoneRecord[]> {
 }
 
 export async function createDeliveryZone(input: DeliveryZoneInput): Promise<DeliveryZoneRecord> {
-  return prisma.deliveryZone.create({ data: input });
+  const row = await prisma.deliveryZone.create({ data: input });
+  await invalidate(CACHE_KEYS.zones);
+  return row;
 }
 
 /** Kayıt yoksa `null` — çağıran taraf bunu 404'e çevirir. */
@@ -42,7 +45,9 @@ export async function updateDeliveryZone(
   patch: Partial<DeliveryZoneInput>
 ): Promise<DeliveryZoneRecord | null> {
   try {
-    return await prisma.deliveryZone.update({ where: { id }, data: patch });
+    const row = await prisma.deliveryZone.update({ where: { id }, data: patch });
+    await invalidate(CACHE_KEYS.zones);
+    return row;
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
       return null;
@@ -54,6 +59,7 @@ export async function updateDeliveryZone(
 export async function deleteDeliveryZone(id: string): Promise<boolean> {
   try {
     await prisma.deliveryZone.delete({ where: { id } });
+    await invalidate(CACHE_KEYS.zones);
     return true;
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {

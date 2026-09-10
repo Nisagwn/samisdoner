@@ -1,12 +1,5 @@
 import type { ProductPatch } from "./store";
-import {
-  ADDITIVES,
-  ALLERGENS,
-  VAT_RATES,
-  type Additive,
-  type Allergen,
-  type Variant,
-} from "./types";
+import { VAT_RATES, type Variant } from "./types";
 import type { DeliveryZoneInput } from "@/lib/orders/zones";
 import { toCents } from "@/lib/money";
 
@@ -83,37 +76,6 @@ function asSortOrder(value: unknown): Result<number> {
 }
 
 /* ------------------------------------------------------ yasal bilgi alanları */
-
-/**
- * Sabit bir listeden seçilmiş kod kümesi.
- *
- * Bilinmeyen kod **sessizce düşürülmez, hata verir**. Alerjen alanında sessiz
- * düşürmenin bedeli, işletmecinin "glüteni işaretledim" sanıp menüde hiçbir
- * şey görmemesidir; bu alanda görünmeyen bir hata doğrudan sağlık riski.
- *
- * Tekrarlar temizlenir, sıra girişten bağımsız olarak sabit listenin sırasına
- * göre normalize edilir: aynı ürün iki kez kaydedildiğinde veri değişmesin.
- */
-function asCodes<T extends string>(
-  value: unknown,
-  allowed: readonly T[],
-  field: string
-): Result<T[]> {
-  if (value === undefined || value === null) return { ok: true, value: [] };
-  if (!Array.isArray(value)) return { ok: false, error: `${field} liste olmalı.` };
-  if (value.length > allowed.length) {
-    return { ok: false, error: `${field} listesinde tekrar eden kayıt var.` };
-  }
-
-  const picked = new Set<T>();
-  for (const item of value) {
-    if (typeof item !== "string" || !allowed.includes(item as T)) {
-      return { ok: false, error: `${field} listesinde tanınmayan değer var.` };
-    }
-    picked.add(item as T);
-  }
-  return { ok: true, value: allowed.filter((code) => picked.has(code)) };
-}
 
 /**
  * KDV oranı.
@@ -233,10 +195,10 @@ export function parseProductBody(
   /*
    * Yasal bilgi alanları.
    *
-   * Bu blok yoktu: `allergens`, `additives`, `vatRate`, `allergenInfoConfirmed`
-   * ve `isPerishable` gövdede gelse bile sessizce düşüyordu. Depo katmanı
-   * onları yazmaya hazırdı, panelde alan yoktu ve yazan da yoktu — sonuç,
-   * panelden açılan her ürünün menüde "bilgi girilmedi" olarak çıkmasıydı.
+   * Ürün başına alerjen/katkı maddesi girişi kaldırıldı: menüde artık ürün
+   * başına kod değil, kartanın ve sipariş sayfasının altında tek bir alerjen
+   * uyarısı duruyor. Bu uçta kalan yasal alanlar KDV oranı ve cayma hakkı
+   * istisnasıdır; ikisi de para ve sözleşmeyi doğrudan etkiler.
    */
   /*
    * Oran gönderilmediyse yeni üründe yemek oranına düşülür.
@@ -253,35 +215,6 @@ export function parseProductBody(
     out.vatRate = r.value;
   } else if (!partial) {
     out.vatRate = 7;
-  }
-
-  if (has("allergens")) {
-    const r = asCodes<Allergen>(input.allergens, ALLERGENS, "Alerjen");
-    if (!r.ok) return r;
-    out.allergens = r.value;
-  } else if (!partial) {
-    out.allergens = [];
-  }
-
-  if (has("additives")) {
-    const r = asCodes<Additive>(input.additives, ADDITIVES, "Katkı maddesi");
-    if (!r.ok) return r;
-    out.additives = r.value;
-  } else if (!partial) {
-    out.additives = [];
-  }
-
-  /*
-   * "Bildirimi zorunlu madde yok" beyanı.
-   *
-   * Boş liste tek başına iki farklı şey anlatabilir: bilgi girilmedi, ya da
-   * gerçekten madde yok. Ayrımı yalnızca bu bayrak taşır ve işletmecinin
-   * bilinçli beyanıdır — varsayılanı `false`, yani "girilmedi".
-   */
-  if (has("allergenInfoConfirmed")) {
-    out.allergenInfoConfirmed = Boolean(input.allergenInfoConfirmed);
-  } else if (!partial) {
-    out.allergenInfoConfirmed = false;
   }
 
   /*

@@ -1,0 +1,58 @@
+# Geliştirme altyapısı: Postgres + Redis.
+#
+# Uygulama BU dosyada yok — `bun dev` makinede çalışmaya devam eder. Sebep:
+# Next'in sıcak yeniden yüklemesi, Windows'ta bir Docker birimi (bind mount)
+# üzerinden dosya izlerken belirgin şekilde yavaşlar ve bazen değişikliği hiç
+# görmez. Kapta yalnızca uygulamanın **beklediği** şeyler durur.
+#
+# Kazanç: sorgu başına gecikme ~87 ms (Frankfurt'taki Supabase) yerine ~1 ms.
+# Sipariş akışında sayfa başına birkaç sorgu olduğu için fark saniyelerle ölçülür.
+#
+#   docker compose up -d          → altyapıyı başlat
+#   bun run db:push && bun run db:seed   → şemayı kur ve örnek veriyi yaz
+#   bun dev                        → uygulama
+#   docker compose down            → durdur (veri kalır)
+#   docker compose down -v         → veriyi de sil (sıfırdan kurulum)
+
+name: doner-dev
+
+services:
+  postgres:
+    # 16-alpine: Supabase'in çalıştırdığı ana sürümle aynı; yerelde çalışan bir
+    # şeyin canlıda farklı davranmaması için sürüm sabitlenir.
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: doner
+      POSTGRES_PASSWORD: doner
+      POSTGRES_DB: doner
+      # Almanca sıralama ve karakter kümesi; ürün adları "Döner" gibi
+      # harfler içeriyor ve sıralama yerelde canlıdakiyle aynı olmalı.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      # Yalnızca 127.0.0.1: geliştirme veritabanı ağa açılmasın.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doner -d doner"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Geliştirmede kalıcılık gereksiz: önbellek kaybı yalnızca bir sonraki
+    # isteğin veritabanına gitmesi demek. `--save ""` disk yazımını kapatır.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

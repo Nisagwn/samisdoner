@@ -3,7 +3,7 @@
  *
  * Menünün kendisi bu dosyada durmaz — tek kaynak admin panelinin yazdığı
  * katalogtur (`lib/admin/store.ts` → `getMenuSections`). Burada yalnızca o
- * katalogun ürettiği ve `MenuGrid` ile `AllergenTable`'ın okuduğu tipler tanımlı.
+ * katalogun ürettiği ve `MenuGrid`'in okuduğu tipler tanımlı.
  *
  * Fiyatlar sayı değil metin olarak taşınır ki gösterimde hiçbir yuvarlama ya da
  * biçim kayması olmasın; tutar hesabı zaten yalnızca sunucuda, cent cinsinden yapılır.
@@ -14,8 +14,6 @@
  * de aynı yazıldığı için onlarda Türkçe alan yoktur — dil TR iken de Almanca
  * alan kullanılır.
  */
-
-import type { AllergenNotice } from "@/lib/legal/allergens";
 
 export type MenuVariant = {
   /** Porsiyon/boy etiketi: "28 CM", "0,33" gibi. */
@@ -54,15 +52,6 @@ export type MenuItem = {
   variants?: MenuVariant[];
   /** Tek fiyatlı üründe PAngV § 4 temel fiyatı. */
   grundpreis?: string;
-  /**
-   * LMIV Art. 21 / ZZulV bildirimi.
-   *
-   * **Alan yoksa "madde yok" anlamına gelmez** — bilgi girilmemiş demektir ve
-   * gösterimde "lütfen sorunuz" olarak çıkar. İşletmecinin "bu üründe bildirimi
-   * zorunlu madde yok" beyanı ayrı bir hâldir (`kind: "none"`); ikisini
-   * birbirine karıştırmak alerjik müşteride doğrudan sağlık riskidir.
-   */
-  allergens?: AllergenNotice;
 };
 
 export type MenuSection = {

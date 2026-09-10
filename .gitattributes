@@ -1,0 +1,31 @@
+# Satır sonu kuralları.
+#
+# Windows'ta git, metin dosyalarını çalışma kopyasında CRLF'e çevirir. Bu,
+# Linux kabına giren dosyalarda sessiz ve can sıkıcı bir arızaya dönüşür:
+# `#!/bin/sh` satırı `#!/bin/sh\r` olur ve kap
+#
+#   exec /usr/local/bin/migrate.sh: no such file or directory
+#
+# der — dosya oradadır, yorumlayıcının adı yanlıştır. Aynı şey Caddyfile ve
+# compose dosyalarında da beklenmedik ayrıştırma hatalarına yol açar.
+#
+# Bu yüzden kaba giren ya da Linux'ta çalışan her şey **LF** olarak sabitlenir.
+
+* text=auto
+
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.sql       text eol=lf
+Dockerfile  text eol=lf
+Caddyfile   text eol=lf
+.env.example      text eol=lf
+.env.prod.example text eol=lf
+.dockerignore     text eol=lf
+
+# İkili dosyalar dönüştürülmemeli.
+*.png  binary
+*.jpg  binary
+*.webp binary
+*.ico  binary
+*.woff2 binary

@@ -109,34 +109,49 @@ export function Select({
 
 /* --------------------------------------------------------------- düğmeler */
 
+export type ButtonVariant = "primary" | "outline" | "ghost" | "success";
+
+const variantStyles: Record<ButtonVariant, string> = {
+  primary: "bg-flame-gradient text-void border-transparent font-extrabold hover:brightness-110",
+  outline: "border-amber bg-amber/10 text-amber hover:bg-amber hover:text-void",
+  ghost: "border-line text-smoke hover:border-amber hover:text-amber",
+  /*
+   * "Sepete eklendi" onayı. Kendi geometrisini kuran ayrı bir düğme değil,
+   * aynı düğmenin ikinci bir durumu: eklemeden sonra kutu yerinde durur,
+   * yalnız rengi ve yazısı değişir — düzen oynamaz.
+   */
+  success: "border-herb bg-herb/15 text-herb",
+};
+
+/**
+ * Düğme geometrisi — sınıf dizisi olarak.
+ *
+ * `Button` bunu sarar, ama aynı geometriyi taşıması gereken her şey `<button>`
+ * değil: "Tüm menü" bir `next/link` bağlantısıdır ve `<a>` olarak kalmalı
+ * (yeni sekmede açılabilmeli, tarayıcı bağlantı olarak görebilmeli). Geometri
+ * ile eleman türünü ayırmadan ikisi kaçınılmaz olarak ayrışıyordu.
+ *
+ * `min-h-[44px]`: dokunma hedefi alt sınırı, dolgu ne olursa olsun korunur.
+ */
+export function buttonClass(variant: ButtonVariant = "primary", className = "") {
+  return `focus-ring tag inline-flex min-h-[44px] items-center justify-center border px-5 py-3 font-display font-semibold transition-[filter,transform,colors] active:translate-y-px disabled:opacity-40 disabled:pointer-events-none ${variantStyles[variant]} ${className}`;
+}
+
 export function Button({
   variant = "primary",
   className = "",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "outline" | "ghost";
+  variant?: ButtonVariant;
 }) {
-  const styles = {
-    primary:
-      "bg-flame-gradient text-void border-transparent font-extrabold hover:brightness-110",
-    outline: "border-amber bg-amber/10 text-amber hover:bg-amber hover:text-void",
-    ghost: "border-line text-smoke hover:border-amber hover:text-amber",
-  }[variant];
-
-  return (
-    <button
-      {...props}
-      /* min-h-[44px]: dokunma hedefi alt sınırı, dolgu ne olursa olsun korunur. */
-      className={`focus-ring tag inline-flex min-h-[44px] items-center justify-center border px-5 py-3 font-display font-semibold transition-[filter,transform,colors] active:translate-y-px disabled:opacity-40 disabled:pointer-events-none ${styles} ${className}`}
-    />
-  );
+  return <button {...props} className={buttonClass(variant, className)} />;
 }
 
 /**
  * Adet seçici.
  *
- * Tek tanım: sepette de, yapılandırıcıda da bu kullanılır. Önceden sepette
- * 32 px, yapılandırıcıda 40 px iki ayrı kopya vardı.
+ * Tek tanım. Önceden iki ayrı kopya vardı (sepette 32 px, kaldırılan
+ * yapılandırıcıda 40 px) ve dokunma hedefi ikisinde de farklıydı.
  */
 export function QtyStepper({
   qty,

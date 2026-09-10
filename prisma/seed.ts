@@ -9,7 +9,7 @@
  * Çalıştırma:  npm run db:seed
  */
 
-import { PrismaClient, BuilderMode } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import catalog from "../data/store/catalog.json";
 import { BUSINESS_INFO } from "../data/businessInfo";
 import { toCents } from "../lib/money";
@@ -89,15 +89,14 @@ async function seedCatalog() {
 
     await prisma.product.upsert({
       where: { id: product.id },
-      // Alerjen/katkı bilgisi ve KDV oranı yalnızca **oluştururken** yazılır:
-      // panelden düzeltilmiş bir oran ya da girilmiş alerjen listesi, tohumlama
-      // yeniden çalıştığında geri alınmamalı.
+      // KDV oranı ve cayma hakkı istisnası yalnızca **oluştururken** yazılır:
+      // panelden düzeltilmiş bir oran, tohumlama yeniden çalıştığında geri
+      // alınmamalı.
       create: {
         id: product.id,
         ...base,
         vatRate: vatRateFor(product.categoryId),
         isPerishable: isPerishable(product.categoryId),
-        allergenInfoConfirmed: false,
       },
       update: base,
     });
@@ -119,40 +118,6 @@ async function seedCatalog() {
   console.log(`  ürün: ${catalog.products.length}`);
 }
 
-async function seedBuilder() {
-  for (const [index, group] of catalog.builder.groups.entries()) {
-    await prisma.builderGroup.upsert({
-      where: { id: group.id },
-      create: {
-        id: group.id,
-        mode: group.mode as BuilderMode,
-        sortOrder: index,
-      },
-      update: { mode: group.mode as BuilderMode, sortOrder: index },
-    });
-
-    for (const [oi, option] of group.options.entries()) {
-      const data = {
-        groupId: group.id,
-        label: option.label,
-        labelDe: option.labelDe ?? "",
-        desc: option.desc ?? "",
-        descDe: option.descDe ?? "",
-        priceCents: toCents(option.price),
-        kcal: option.kcal ?? 0,
-        image: option.image ?? null,
-        sortOrder: oi,
-      };
-      await prisma.builderOption.upsert({
-        where: { id: option.id },
-        create: { id: option.id, ...data },
-        update: data,
-      });
-    }
-  }
-  console.log(`  yapılandırıcı grubu: ${catalog.builder.groups.length}`);
-}
-
 async function seedSettings() {
   // Tekil kayıt. Var olan ayarlar korunur — yalnızca yoksa oluşturulur.
   await prisma.settings.upsert({
@@ -161,8 +126,6 @@ async function seedSettings() {
       id: 1,
       serviceFeeCents: toCents(catalog.settings.serviceFee),
       freeServiceOverCents: toCents(catalog.settings.freeServiceOver),
-      builderBaseProductId: catalog.builder.baseProductId,
-      builderFallbackPriceCents: toCents(catalog.builder.fallbackBasePrice),
     },
     update: {},
   });
@@ -257,7 +220,6 @@ async function seedDeliveryZone() {
 async function main() {
   console.log("Katalog göçü başlıyor…");
   await seedCatalog();
-  await seedBuilder();
   await seedSettings();
   await seedOpeningHours();
   await seedDeliveryZone();

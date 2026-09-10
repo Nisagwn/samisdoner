@@ -79,7 +79,6 @@ function line(lineCents: number, vatRate: number, unavailable = false): PricedLi
     detail: "",
     unitCents: lineCents,
     lineCents,
-    kcal: 0,
     qty: 1,
     vatRate,
     unavailable,

@@ -1,22 +1,14 @@
-import { revalidateTag, unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
+import { CACHE_KEYS, cached, invalidate } from "@/lib/cache";
 import type { Prisma } from "@prisma/client";
 import type { MenuSection } from "@/data/speisekarte";
-import { BUILDER_GROUPS_SEED } from "@/data/menu";
 import { toCents, toEuro } from "@/lib/money";
-import { allergenNotice } from "@/lib/legal/allergens";
 import { grundpreisLabel } from "@/lib/legal/grundpreis";
 import {
   CATALOG_VERSION,
   effectivePrice,
   formatPrice,
   slugify,
-  type Additive,
-  type Allergen,
-  type BuilderConfig,
-  type BuilderGroup,
-  type BuilderGroupId,
-  type BuilderOption,
   type Catalog,
   type Category,
   type Product,
@@ -44,7 +36,6 @@ import {
 
 type ProductRow = Prisma.ProductGetPayload<{ include: { variants: true } }>;
 type CategoryRow = Prisma.CategoryGetPayload<object>;
-type BuilderGroupRow = Prisma.BuilderGroupGetPayload<{ include: { options: true } }>;
 type SettingsRow = Prisma.SettingsGetPayload<object>;
 
 const productInclude = {
@@ -73,9 +64,6 @@ function toProduct(row: ProductRow): Product {
       .map((v) => ({ size: v.size, price: toEuro(v.priceCents) })),
     sortOrder: row.sortOrder,
     vatRate: row.vatRate,
-    allergens: row.allergens as Allergen[],
-    additives: row.additives as Additive[],
-    allergenInfoConfirmed: row.allergenInfoConfirmed,
     isPerishable: row.isPerishable,
   };
 }
@@ -103,74 +91,30 @@ function toSettings(row: SettingsRow | null): Settings {
   };
 }
 
-/**
- * Yapılandırıcı görünümü.
- *
- * Grup **kimlikleri ve sırası** kod tarafından belirlenir (arayüz onlara göre
- * kurulu); panelden değiştirilen şey seçeneklerin metni ve ek ücretidir.
- * Depoda karşılığı olmayan grup için tohumdaki hâli kullanılır, böylece bölüm
- * hiçbir zaman boş kalmaz.
- */
-function toBuilder(groups: BuilderGroupRow[], settings: SettingsRow | null): BuilderConfig {
-  const stored = new Map(groups.map((g) => [g.id, g] as const));
-
-  const resolved: BuilderGroup[] = BUILDER_GROUPS_SEED.map((seedGroup) => {
-    const found = stored.get(seedGroup.id);
-    if (!found || found.options.length === 0) return seedGroup;
-
-    const options: BuilderOption[] = found.options
-      .slice()
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((o) => {
-        const seedOption = seedGroup.options.find((x) => x.id === o.id);
-        return {
-          id: o.id,
-          label: o.label || seedOption?.label || o.id,
-          labelDe: o.labelDe || seedOption?.labelDe || o.label || o.id,
-          desc: o.desc || seedOption?.desc || "",
-          descDe: o.descDe || seedOption?.descDe || "",
-          price: toEuro(o.priceCents),
-          kcal: o.kcal,
-          image: o.image ?? seedOption?.image ?? null,
-        };
-      });
-
-    return { id: seedGroup.id, mode: seedGroup.mode, options };
-  });
-
-  return {
-    baseProductId: settings?.builderBaseProductId ?? null,
-    fallbackBasePrice: toEuro(settings?.builderFallbackPriceCents ?? 0),
-    groups: resolved,
-  };
-}
-
 /* ------------------------------------------------------------------ okuma */
 
 /**
  * Katalog önbelleği.
  *
- * Menü, fiyat ve yapılandırıcı ayarları **nadiren** değişir ama neredeyse her
+ * Menü ve fiyat ayarları **nadiren** değişir ama neredeyse her
  * istekte okunur: ana sayfa, kart, sepet fiyatlaması, sipariş akışı. Her
  * okumanın veritabanına gitmesi, uygulamanın hızını veritabanına olan ağ
  * gecikmesine bağlar — havuzlanmış bağlantı üzerinden sorgu başına yüzlerce
  * milisaniye eder ve sayfa birkaç saniyede açılır.
  *
- * Bu yüzden katalog bir kez okunur ve etiketli önbellekte tutulur. Bayatlık
- * riski yok: panelden yapılan her yazma `invalidateCatalog()` çağırır ve
- * önbellek o anda düşer. `revalidate` yalnızca son çare — veritabanı uygulama
- * dışından (seed, Prisma Studio) değiştirilirse en geç bu süre sonunda
- * yakalanır.
+ * Bu yüzden katalog bir kez okunur ve paylaşımlı önbellekte tutulur
+ * (`lib/cache.ts` → Redis varsa Redis, yoksa süreç içi bellek). Bayatlık riski
+ * yok: panelden yapılan her yazma `invalidateCatalog()` çağırır ve önbellek o
+ * anda düşer. Süre sınırı yalnızca son çare — veritabanı uygulama dışından
+ * (seed, Prisma Studio) değiştirilirse en geç bu süre sonunda yakalanır.
  */
-const CATALOG_TAG = "catalog";
 const CATALOG_MAX_AGE_SECONDS = 300;
 
 async function loadCatalog(): Promise<Catalog> {
-  const [categories, products, settings, groups] = await Promise.all([
+  const [categories, products, settings] = await Promise.all([
     prisma.category.findMany({ orderBy: { sortOrder: "asc" } }),
     prisma.product.findMany({ orderBy: { sortOrder: "asc" }, include: productInclude }),
     prisma.settings.findUnique({ where: { id: 1 } }),
-    prisma.builderGroup.findMany({ orderBy: { sortOrder: "asc" }, include: { options: true } }),
   ]);
 
   return {
@@ -178,27 +122,33 @@ async function loadCatalog(): Promise<Catalog> {
     categories: categories.map(toCategory),
     products: products.map(toProduct),
     settings: toSettings(settings),
-    builder: toBuilder(groups, settings),
   };
 }
 
-const cachedCatalog = unstable_cache(loadCatalog, ["catalog"], {
-  tags: [CATALOG_TAG],
-  revalidate: CATALOG_MAX_AGE_SECONDS,
-});
-
 export async function getCatalog(): Promise<Catalog> {
-  return cachedCatalog();
+  return cached(CACHE_KEYS.catalog, CATALOG_MAX_AGE_SECONDS, loadCatalog);
 }
 
 /**
  * Katalog önbelleğini düşürür.
  *
- * Katalogu değiştiren **her** yazma bunu çağırmak zorundadır; unutulan bir
+ * Katalogu değiştiren **her** yazma bunu `await` etmek zorundadır; unutulan bir
  * çağrı, panelde değişmiş ama müşteride eski görünen bir fiyat demektir.
  */
-export function invalidateCatalog(): void {
-  revalidateTag(CATALOG_TAG);
+export async function invalidateCatalog(): Promise<void> {
+  await invalidate(CACHE_KEYS.catalog);
+}
+
+/**
+ * `Settings` satırını değiştiren yazmalar için.
+ *
+ * Aynı satır iki ayrı görünüme besleniyor: katalog (servis ücreti) ve sipariş
+ * ayarları (açık/kapalı anahtarları, nakit, hazırlık süresi). Hangi alanın
+ * değiştiğine bakıp yalnızca birini düşürmek, bir gün eklenen üçüncü bir alanın
+ * sessizce bayat kalması demek olurdu; iki anahtar birlikte düşer.
+ */
+export async function invalidateSettings(): Promise<void> {
+  await invalidate(CACHE_KEYS.catalog, CACHE_KEYS.orderSettings);
 }
 
 /** Ürün müşteriye gösterilir mi: üç anahtarın da açık olması gerekir. */
@@ -266,12 +216,6 @@ export async function getMenuSections(): Promise<MenuSection[]> {
         // Tek fiyatlı üründe hacim bilgisi taşıyan bir etiket yoktur (boy
         // yalnızca varyantta bulunur), dolayısıyla temel fiyat hesaplanamaz.
         // Uydurulmuş bir litre değeri göstermektense hiç göstermemek doğrudur.
-        // LMIV: bilgi girilmemiş ürün "madde yok" diye gösterilemez.
-        allergens: allergenNotice({
-          allergens: p.allergens,
-          additives: p.additives,
-          allergenInfoConfirmed: p.allergenInfoConfirmed,
-        }),
       };
     }),
   }));
@@ -290,13 +234,6 @@ export async function getStats() {
     visibleProducts: products.filter((p) => p.active && p.inStock && p.showOnHome).length,
     discounted: products.filter((p) => p.discountPrice !== null).length,
     categories,
-    /**
-     * Alerjen bilgisi ne girilmiş ne de "yok" diye onaylanmış ürünler.
-     * LMIV Art. 14 gereği bu ürünler eksik bilgiyle satılıyor demektir.
-     */
-    missingLegalInfo: products.filter(
-      (p) => p.allergens.length === 0 && !p.allergenInfoConfirmed
-    ).length,
   };
 }
 
@@ -332,20 +269,12 @@ export async function getFeaturedProducts(limit = 3): Promise<Product[]> {
 /**
  * Yeni ürün girdisi.
  *
- * Yasal alanlar (KDV oranı, alerjen, katkı maddesi) isteğe bağlıdır: mevcut
+ * Yasal alanlar (KDV oranı, cayma hakkı istisnası) isteğe bağlıdır: mevcut
  * çağrı yerleri bunları göndermiyor ve varsayılanla oluşuyor. Panel bu alanları
  * gönderdiğinde değerler olduğu gibi yazılır.
  */
-export type ProductInput = Omit<
-  Product,
-  "id" | "sortOrder" | "vatRate" | "allergens" | "additives" | "allergenInfoConfirmed" | "isPerishable"
-> &
-  Partial<
-    Pick<
-      Product,
-      "vatRate" | "allergens" | "additives" | "allergenInfoConfirmed" | "isPerishable"
-    >
-  >;
+export type ProductInput = Omit<Product, "id" | "sortOrder" | "vatRate" | "isPerishable"> &
+  Partial<Pick<Product, "vatRate" | "isPerishable">>;
 
 /** Güncellemede sıra da değiştirilebilir; oluşturmada sıra otomatik verilir. */
 export type ProductPatch = Partial<ProductInput & Pick<Product, "sortOrder">>;
@@ -371,11 +300,6 @@ function productData(patch: ProductPatch) {
   if (patch.featured !== undefined) data.featured = patch.featured;
   if (patch.sortOrder !== undefined) data.sortOrder = patch.sortOrder;
   if (patch.vatRate !== undefined) data.vatRate = patch.vatRate;
-  if (patch.allergens !== undefined) data.allergens = patch.allergens;
-  if (patch.additives !== undefined) data.additives = patch.additives;
-  if (patch.allergenInfoConfirmed !== undefined) {
-    data.allergenInfoConfirmed = patch.allergenInfoConfirmed;
-  }
   if (patch.isPerishable !== undefined) data.isPerishable = patch.isPerishable;
 
   return data;
@@ -412,9 +336,6 @@ export async function createProduct(input: ProductInput & { id: string }): Promi
       showOnHome: input.showOnHome,
       sortOrder: (max._max.sortOrder ?? 0) + 1,
       vatRate: input.vatRate ?? 7,
-      allergens: input.allergens ?? [],
-      additives: input.additives ?? [],
-      allergenInfoConfirmed: input.allergenInfoConfirmed ?? false,
       isPerishable: input.isPerishable ?? true,
       variants: {
         create: input.variants.map((v, i) => ({
@@ -427,7 +348,7 @@ export async function createProduct(input: ProductInput & { id: string }): Promi
     include: productInclude,
   });
 
-  invalidateCatalog();
+  await invalidateCatalog();
   return toProduct(row);
 }
 
@@ -458,13 +379,13 @@ export async function updateProduct(id: string, patch: ProductPatch): Promise<Pr
     });
   });
 
-  invalidateCatalog();
+  await invalidateCatalog();
   return toProduct(row);
 }
 
 export async function deleteProduct(id: string): Promise<boolean> {
   const { count } = await prisma.product.deleteMany({ where: { id } });
-  if (count > 0) invalidateCatalog();
+  if (count > 0) await invalidateCatalog();
   return count > 0;
 }
 
@@ -479,7 +400,7 @@ export async function createCategory(name: string, id: string): Promise<Category
   const row = await prisma.category.create({
     data: { id: unique, name, sortOrder: (max._max.sortOrder ?? 0) + 1 },
   });
-  invalidateCatalog();
+  await invalidateCatalog();
   return toCategory(row);
 }
 
@@ -499,7 +420,7 @@ export async function updateCategory(
   const exists = await prisma.category.findUnique({ where: { id }, select: { id: true } });
   if (!exists) return null;
   const row = await prisma.category.update({ where: { id }, data: patch });
-  invalidateCatalog();
+  await invalidateCatalog();
   return toCategory(row);
 }
 
@@ -517,7 +438,7 @@ export async function deleteCategory(id: string): Promise<DeleteCategoryResult> 
   if (used > 0) return { ok: false, reason: "has_products", count: used };
 
   await prisma.category.delete({ where: { id } });
-  invalidateCatalog();
+  await invalidateCatalog();
   return { ok: true };
 }
 
@@ -543,87 +464,8 @@ export async function updateSettings(patch: Partial<Settings>): Promise<Settings
     },
     update: data,
   });
-  invalidateCatalog();
+  await invalidateSettings();
   return toSettings(row);
-}
-
-/* --------------------------------------------------------- yapılandırıcı */
-
-export async function getBuilderConfig(): Promise<BuilderConfig> {
-  return (await getCatalog()).builder;
-}
-
-/** Müşteri tarafına gönderilen yapılandırıcı görünümü (taban fiyat çözülmüş). */
-export type PublicBuilder = {
-  basePriceCents: number;
-  baseProductName: string | null;
-  groups: BuilderGroup[];
-};
-
-export async function getPublicBuilder(): Promise<PublicBuilder> {
-  const catalog = await getCatalog();
-  const product = catalog.builder.baseProductId
-    ? catalog.products.find((p) => p.id === catalog.builder.baseProductId)
-    : undefined;
-  return {
-    basePriceCents: toCents(resolveBasePrice(catalog)),
-    baseProductName: product?.name ?? null,
-    groups: catalog.builder.groups,
-  };
-}
-
-export async function updateBuilder(patch: Partial<BuilderConfig>): Promise<BuilderConfig> {
-  await prisma.$transaction(async (tx) => {
-    if (patch.baseProductId !== undefined || patch.fallbackBasePrice !== undefined) {
-      const data: Prisma.SettingsUncheckedUpdateInput = {};
-      if (patch.baseProductId !== undefined) data.builderBaseProductId = patch.baseProductId;
-      if (patch.fallbackBasePrice !== undefined) {
-        data.builderFallbackPriceCents = toCents(patch.fallbackBasePrice);
-      }
-      await tx.settings.upsert({
-        where: { id: 1 },
-        create: {
-          id: 1,
-          builderBaseProductId: patch.baseProductId ?? null,
-          builderFallbackPriceCents: toCents(patch.fallbackBasePrice ?? 0),
-        },
-        update: data,
-      });
-    }
-
-    if (!patch.groups) return;
-
-    // Grup kimlikleri koddan gelir; burada yalnızca içerikleri güncellenir.
-    for (const [index, group] of patch.groups.entries()) {
-      await tx.builderGroup.upsert({
-        where: { id: group.id },
-        create: { id: group.id, mode: group.mode, sortOrder: index },
-        update: { mode: group.mode, sortOrder: index },
-      });
-
-      for (const [oi, option] of group.options.entries()) {
-        const data = {
-          groupId: group.id,
-          label: option.label,
-          labelDe: option.labelDe,
-          desc: option.desc,
-          descDe: option.descDe,
-          priceCents: toCents(option.price),
-          kcal: option.kcal,
-          image: option.image,
-          sortOrder: oi,
-        };
-        await tx.builderOption.upsert({
-          where: { id: option.id },
-          create: { id: option.id, ...data },
-          update: data,
-        });
-      }
-    }
-  });
-
-  invalidateCatalog();
-  return getBuilderConfig();
 }
 
 /* -------------------------------------------------------------- fiyatlama */
@@ -635,16 +477,12 @@ export async function updateBuilder(patch: Partial<BuilderConfig>): Promise<Buil
  * hangi boy, hangi seçenekler, kaç adet" der; para hesabını her zaman sunucu
  * yapar. Böylece istek gövdesi kurcalanarak fiyat değiştirilemez.
  */
-export type CartLineInput =
-  | { kind: "product"; productId: string; variantSize?: string; qty: number }
-  | {
-      kind: "builder";
-      bread: string;
-      protein: string;
-      sauce: string;
-      veggies: string[];
-      qty: number;
-    };
+export type CartLineInput = {
+  kind: "product";
+  productId: string;
+  variantSize?: string;
+  qty: number;
+};
 
 export type PricedLine = {
   /** Sepette satırı benzersiz kılan anahtar (aynı yapılandırma = aynı satır). */
@@ -654,7 +492,6 @@ export type PricedLine = {
   detail: string;
   unitCents: number;
   lineCents: number;
-  kcal: number;
   qty: number;
   /** Satırın KDV oranı (7 veya 19); dökümü bu belirler. */
   vatRate: number;
@@ -691,100 +528,17 @@ function clampQty(qty: unknown): number {
   return Math.min(n, MAX_QTY);
 }
 
-function optionLabel(option: BuilderOption, lang: "tr" | "de"): string {
-  return lang === "de" ? option.labelDe || option.label : option.label;
-}
-
-export function builderKey(input: Extract<CartLineInput, { kind: "builder" }>): string {
-  const veggies = Array.isArray(input.veggies) ? input.veggies.slice().sort().join(",") : "";
-  return `builder:${input.bread}|${input.protein}|${input.sauce}|${veggies}`;
-}
-
 export function productKey(productId: string, variantSize?: string): string {
   return `product:${productId}|${variantSize ?? ""}`;
 }
 
 /**
- * Yapılandırıcının taban fiyatı.
+ * Bir ürün satırının fiyatı.
  *
- * Katalogdaki gerçek ürünün (varsayılan: menüdeki döner) güncel satış fiyatı
- * kullanılır — indirim varsa indirimli olan. Ürün silinmiş/bulunamıyorsa
- * `fallbackBasePrice` devreye girer.
+ * Menüden kalkmış (pasif / tükenmiş / gizli) ya da silinmiş ürün `unavailable`
+ * işaretiyle döner ve toplama girmez; satır sepetten sessizce silinmez, çünkü
+ * müşteri neyin düştüğünü görmeli. Boy seçilmişse fiyat o boyun fiyatıdır.
  */
-function resolveBasePrice(catalog: Catalog): number {
-  const { baseProductId, fallbackBasePrice } = catalog.builder;
-  if (!baseProductId) return fallbackBasePrice;
-  const product = catalog.products.find((p) => p.id === baseProductId);
-  return product ? effectivePrice(product) : fallbackBasePrice;
-}
-
-/**
- * Yapılandırıcı satırının KDV oranı taban üründen gelir; taban ürün yoksa
- * yemek oranı (%7) varsayılır — yapılandırıcı her zaman bir yemek üretir.
- */
-function builderVatRate(catalog: Catalog): number {
-  const id = catalog.builder.baseProductId;
-  const product = id ? catalog.products.find((p) => p.id === id) : undefined;
-  return product?.vatRate ?? 7;
-}
-
-function priceBuilderLine(
-  catalog: Catalog,
-  input: Extract<CartLineInput, { kind: "builder" }>,
-  lang: "tr" | "de"
-): PricedLine {
-  const groups = new Map(catalog.builder.groups.map((g) => [g.id, g] as const));
-
-  /** Seçim bulunamazsa gruptaki ilk seçeneğe düşülür; satır fiyatsız kalmaz. */
-  const pick = (groupId: BuilderGroupId, id: string): BuilderOption | null => {
-    const group = groups.get(groupId);
-    if (!group) return null;
-    return group.options.find((o) => o.id === id) ?? group.options[0] ?? null;
-  };
-
-  const bread = pick("bread", input.bread);
-  const protein = pick("protein", input.protein);
-  const sauce = pick("sauce", input.sauce);
-  const veggieGroup = groups.get("veggies");
-  const veggies = (veggieGroup?.options ?? []).filter((o) =>
-    Array.isArray(input.veggies) ? input.veggies.includes(o.id) : false
-  );
-
-  const chosen = [bread, protein, sauce].filter((o): o is BuilderOption => o !== null);
-  const unitCents =
-    toCents(resolveBasePrice(catalog)) +
-    [...chosen, ...veggies].reduce((sum, o) => sum + toCents(o.price), 0);
-  const kcal = [...chosen, ...veggies].reduce((sum, o) => sum + o.kcal, 0);
-
-  const qty = clampQty(input.qty);
-  const names = chosen.map((o) => optionLabel(o, lang)).join(" • ");
-  const veggieNames = veggies.map((o) => optionLabel(o, lang)).join(", ");
-
-  const resolved: Extract<CartLineInput, { kind: "builder" }> = {
-    kind: "builder",
-    bread: bread?.id ?? input.bread,
-    protein: protein?.id ?? input.protein,
-    sauce: sauce?.id ?? input.sauce,
-    veggies: veggies.map((o) => o.id),
-    qty,
-  };
-
-  return {
-    key: builderKey(resolved),
-    input: resolved,
-    label: lang === "de" ? "Döner nach Wunsch" : "Kendin Hazırla Döner",
-    detail: veggieNames
-      ? `${names} • ${veggieNames}`
-      : `${names} • ${lang === "de" ? "ohne Gemüse" : "sebzesiz"}`,
-    unitCents,
-    lineCents: unitCents * qty,
-    kcal,
-    qty,
-    vatRate: builderVatRate(catalog),
-    unavailable: chosen.length === 0,
-  };
-}
-
 function priceProductLine(
   catalog: Catalog,
   input: Extract<CartLineInput, { kind: "product" }>,
@@ -802,7 +556,6 @@ function priceProductLine(
       detail: "",
       unitCents: 0,
       lineCents: 0,
-      kcal: 0,
       qty,
       vatRate: product?.vatRate ?? 7,
       unavailable: true,
@@ -821,7 +574,6 @@ function priceProductLine(
       detail: input.variantSize,
       unitCents: 0,
       lineCents: 0,
-      kcal: 0,
       qty,
       vatRate: product.vatRate,
       unavailable: true,
@@ -839,7 +591,6 @@ function priceProductLine(
     detail: variant ? [variant.size, desc].filter(Boolean).join(" — ") : desc,
     unitCents,
     lineCents: unitCents * qty,
-    kcal: 0,
     qty,
     vatRate: product.vatRate,
     unavailable: false,
@@ -903,8 +654,7 @@ export function buildVatBreakdown(lines: PricedLine[], extraCents: number): VatB
 /**
  * Sepetin **tek geçerli** fiyat hesabı.
  *
- * Yapılandırıcı, sepet çekmecesi, ödeme adımı ve sipariş ucu aynı bu fonksiyonu
- * kullanır; dolayısıyla ekranda görünen tutarla siparişe yazılan tutarın
+ * Sepet çekmecesi, ödeme adımı ve sipariş ucu aynı bu fonksiyonu kullanır; dolayısıyla ekranda görünen tutarla siparişe yazılan tutarın
  * ayrışması mümkün değildir.
  */
 export async function priceCart(
@@ -913,13 +663,7 @@ export async function priceCart(
 ): Promise<Quote> {
   const catalog = await getCatalog();
 
-  const lines = inputs
-    .slice(0, 60)
-    .map((input) =>
-      input.kind === "builder"
-        ? priceBuilderLine(catalog, input, lang)
-        : priceProductLine(catalog, input, lang)
-    );
+  const lines = inputs.slice(0, 60).map((input) => priceProductLine(catalog, input, lang));
 
   const subtotalCents = lines
     .filter((l) => !l.unavailable)

@@ -119,27 +119,6 @@ export function playDrip() {
   osc.stop(t + 0.22);
 }
 
-/** Malzeme açılıp kapandığında: çok kısa bir tık. */
-export function playToggle(on: boolean) {
-  const c = ensureContext();
-  if (!c || !master || c.state !== "running") return;
-  const t = c.currentTime;
-
-  const osc = c.createOscillator();
-  osc.type = "triangle";
-  osc.frequency.setValueAtTime(on ? 520 : 320, t);
-  osc.frequency.exponentialRampToValueAtTime(on ? 880 : 190, t + 0.07);
-
-  const g = c.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.1, t + 0.006);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
-
-  osc.connect(g).connect(master);
-  osc.start(t);
-  osc.stop(t + 0.12);
-}
-
 /**
  * Yeni sipariş uyarısı — panelde çalar.
  *

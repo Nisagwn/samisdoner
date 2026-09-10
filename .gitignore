@@ -1,5 +1,6 @@
 node_modules
 .next
+.next-dev
 out
 .DS_Store
 *.local
@@ -13,6 +14,14 @@ data/store/*.tmp
 # ortam dosyalari
 .env
 .env*.local
+# canli sunucudaki gizli anahtarlar (Stripe, admin parolasi, DB parolasi)
+.env.prod
+
+# veritabani yedekleri sunucuda durur, repoda degil
+backups/
+
+# rclone yapilandirmasi ve SSH anahtari (uzak yedek hedefi)
+deploy/backup-secrets/
 
 # bun kullaniliyor: npm lockfile'i yanlislikla olusursa yok say
 package-lock.json

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCart } from "@/lib/cart";
 import { formatCents } from "@/lib/money";
+import AllergenWarning from "@/components/legal/AllergenWarning";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { createOrderAction } from "@/lib/orders/actions";
 import type { OrderError } from "@/lib/orders/result";
@@ -651,10 +652,7 @@ export function CheckoutView() {
             </a>
             {legalHintParts.after}
             <br />
-            {t.cart.legalNoWithdrawal}{" "}
-            <a href="/allergene" target="_blank" rel="noopener" className="text-amber underline">
-              {t.cart.legalAllergens}
-            </a>
+            {t.cart.legalNoWithdrawal}
           </p>
 
           {/*
@@ -673,6 +671,17 @@ export function CheckoutView() {
           </div>
         </aside>
       </div>
+
+      {/*
+        Alerjen uyarısı.
+
+        Sayfanın en altında, özetten ve ödeme düğmesinden SONRA duruyor:
+        § 312j Abs. 2 BGB özet bloğu ile düğmenin arasına yasal metin dışında
+        hiçbir şeyin girmesine izin vermiyor, dolayısıyla uyarının yeri o
+        aralığın dışıdır. Menünün altındaki uyarının aynı bileşenidir — iki
+        yüzeyde tek metin, tek yerden düzeltilir.
+      */}
+      <AllergenWarning tone="strong" className="mt-12" />
 
       {/*
         Mobil ödeme çubuğu.

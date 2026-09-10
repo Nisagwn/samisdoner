@@ -107,11 +107,6 @@ export default function CategoryManager({ categories }: { categories: Row[] }) {
 
   return (
     <div className="max-w-[880px]">
-      <header className="mb-8">
-        <p className="tag text-flame mb-2">Katalog</p>
-        <h1 className="font-display font-extrabold text-3xl md:text-4xl text-bone">Kategoriler</h1>
-      </header>
-
       <form onSubmit={addCategory} className="flex flex-col sm:flex-row gap-3 mb-7">
         <TextInput
           value={newName}
