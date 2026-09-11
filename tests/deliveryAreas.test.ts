@@ -115,3 +115,40 @@ describe("bölge satırlarının belediye listesine açılması", () => {
     expect(cities[0].city).toBe("10115");
   });
 });
+
+/**
+ * Panelin aday listesi. Yanlış üretilen bir aday, işletmecinin teslimata
+ * açtığını sandığı ama hiçbir müşterinin denk gelmediği bir posta kodudur.
+ */
+describe("panel aday posta kodları", () => {
+  it("her kodu bir kez listeler ve belediyelerini toplar", () => {
+    const candidates = postalCodeCandidates();
+    const codes = candidates.map((candidate) => candidate.postalCode);
+    expect(new Set(codes).size).toBe(codes.length);
+
+    const multi = candidates.find((candidate) => candidate.postalCode === "94342");
+    expect(multi?.cities).toEqual(expect.arrayContaining(["Straßkirchen", "Irlbach"]));
+  });
+
+  it("uzaklığa göre sıralı — en yakın köy başta", () => {
+    const distances = postalCodeCandidates().map((candidate) => candidate.distanceKm);
+    expect([...distances].sort((a, b) => a - b)).toEqual(distances);
+  });
+
+  it("eklenmiş kodu işaretler ama listeden atmaz", () => {
+    const candidates = postalCodeCandidates(["94342"]);
+    expect(candidates.find((c) => c.postalCode === "94342")?.taken).toBe(true);
+    expect(candidates.filter((c) => c.taken)).toHaveLength(1);
+  });
+
+  it("dizinde olmayan bir kodun eklenmiş olması listeyi bozmaz", () => {
+    // Panelde elle yazılmış, yarıçap dışı bir kod. Eşleşecek aday yok.
+    expect(postalCodeCandidates(["10115"]).every((c) => !c.taken)).toBe(true);
+  });
+
+  it("belediye adları tekrarsız ve alfabetik", () => {
+    const names = knownCityNames();
+    expect(new Set(names).size).toBe(names.length);
+    expect([...names].sort((a, b) => a.localeCompare(b, "de"))).toEqual(names);
+  });
+});
