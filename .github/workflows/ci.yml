@@ -1,0 +1,74 @@
+# Kontrol koşusu — lint, tip, test, derleme.
+#
+# **Elle çalıştırılır.** Tetikleyici yalnızca `workflow_dispatch`: her push'ta
+# koşan bir CI, dalda yarım bırakılmış bir işi kırmızı işaretler ve o kırmızı
+# zamanla okunmaz olur. Burada koşu bilinçli bir sorudur — "bu hâli yayına
+# hazır mı" — ve cevabı bu yüzden anlamlıdır.
+#
+# GitHub'da çalıştırmak için: Actions sekmesi → "Kontrol koşusu" → "Run
+# workflow" → dalı seçip onayla.
+#
+# Sıra ucuzdan pahalıya dizildi: lint saniyeler, derleme dakikalar sürer.
+# `next build` en sonda ve en değerlisi — sunucu/istemci bileşen sınırını
+# aşan bir hatayı yalnızca o yakalar, tip denetimi göremez.
+
+name: Kontrol koşusu
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_build:
+        description: "Derlemeyi atla (yalnızca lint + tip + test)"
+        type: boolean
+        default: false
+
+jobs:
+  kontrol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Gerçek gizli anahtar YOK ve olmamalı: aşağıdaki değerlerin hiçbiri bir
+    # servise bağlanmaz. Derleme sırasında veritabanına sorgu atılmıyor (her
+    # sayfa `force-dynamic`), Stripe istemcisi ise ilk çağrıda kuruluyor —
+    # bunlar yalnızca modül yüklenirken okunan alanların dolu olması için var.
+    env:
+      DATABASE_URL: "postgresql://ci:ci@127.0.0.1:5432/ci"
+      DIRECT_URL: "postgresql://ci:ci@127.0.0.1:5432/ci"
+      NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+      ADMIN_SESSION_SECRET: "ci-icin-sahte-anahtar-32-karakter"
+      CUSTOMER_SESSION_SECRET: "ci-icin-sahte-anahtar-32-karakter"
+      ORDER_TOKEN_SECRET: "ci-icin-sahte-anahtar-32-karakter"
+      ADMIN_PASSWORD: "ci"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # `--frozen-lockfile`: bun.lock ile package.json ayrışmışsa koşu burada
+      # durur. Sessizce farklı bir sürüm kurup "testler geçti" demek, yerelde
+      # olmayan bir şeyi onaylamak olurdu.
+      - name: Bağımlılıklar
+        run: bun install --frozen-lockfile
+
+      # `postinstall` zaten çalıştırır; yine de açıkça yazılı, çünkü Prisma
+      # istemcisi üretilmeden tip denetimi de test de anlamsız hatalar verir.
+      - name: Prisma istemcisi
+        run: bunx prisma generate
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Tip denetimi
+        run: bunx tsc --noEmit
+
+      - name: Testler
+        run: bun run test
+
+      # Google Fonts'a internet üzerinden erişir (bkz. README). Ağ yoksa bu
+      # adım düşer; koşunun geri kalanı yine de bilgi verir.
+      - name: Derleme
+        if: ${{ !inputs.skip_build }}
+        run: bun run build
