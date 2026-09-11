@@ -9,10 +9,18 @@ import type { CheckoutFieldErrors } from "@/lib/checkout/validate";
 /**
  * Teslimat adresi alanları.
  *
- * Akış bilinçli olarak **önce şehir, sonra posta kodu**: posta kodunu ezbere
- * bilmeyen müşteri şehrini seçip listeden bulur, teslimat verilmeyen bir kod
- * listede hiç görünmez. Yani "buraya teslimat yapmıyoruz" hatası formu
- * doldurduktan sonra doğmaz — hiç doğmaz.
+ * Akış **posta kodu sormaz, şehir sorar.** Kimse kendi posta kodunu ezbere
+ * bilmek zorunda değil — ama herkes hangi köyde oturduğunu bilir. Müşteri
+ * listeden yerini seçer, posta kodu ondan türer (`/api/menu/delivery`); kutuya
+ * elle beş hane yazılan eski akışta müşteri ancak son haneden sonra "bu bölgeye
+ * teslimat yapılmıyor" cevabını alıyordu. Teslimat verilmeyen bir yer listede
+ * hiç görünmediği için o hata artık doğmuyor.
+ *
+ * Posta kodu kutusu **yalnızca gerektiğinde** çıkar: seçilen belediye tek bir
+ * posta koduna düşüyorsa (neredeyse her zaman) kod seçilmez, altta yazıyla
+ * gösterilir. Tek seçenekli bir açılır liste, kullanıcıya karar veriyormuş gibi
+ * yaptırıp hiçbir şey sormaz. Aiterhofen gibi iki koda dağılan yerlerde kutu
+ * kendiliğinden görünür.
  *
  * Sokak, kapı numarası, kat ve zil ismi serbest metindir: hiçbiri teslimat
  * kararına girmez, hepsi kuryenin kapıyı bulması içindir. Bu yüzden kat ve zil
@@ -67,9 +75,22 @@ export function AddressFields({
     );
   }
 
+  /** Seçilen posta kodunun tarifesi — tek seçenekte de, çok seçenekte de aynı satır. */
+  const selectedZone = zipsForCity.find((entry) => entry.zip === zip) ?? null;
+
+  /** Belediye tek koda düşüyorsa kutu yerine yazı. */
+  const needsZipChoice = zipsForCity.length > 1;
+
+  const tariffOf = (entry: DeliveryCity["zips"][number]) =>
+    `${t.cart.zoneMinOrder.replace("{amount}", formatCents(entry.minOrderCents))}, ${
+      entry.feeCents === 0
+        ? t.cart.zoneFeeFree
+        : t.cart.zoneFee.replace("{amount}", formatCents(entry.feeCents))
+    }`;
+
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className={needsZipChoice ? "grid gap-4 sm:grid-cols-2" : undefined}>
         <Field label={t.cart.cityLabel} htmlFor="city" error={errors.city}>
           <Select
             id="city"
@@ -87,28 +108,41 @@ export function AddressFields({
           </Select>
         </Field>
 
-        <Field label={t.cart.zipLabel} htmlFor="zip" error={errors.zip}>
-          <Select
-            id="zip"
-            value={zip}
-            disabled={!city}
-            invalid={Boolean(errors.zip)}
-            onChange={(e) => onZipChange(e.target.value)}
-            autoComplete="postal-code"
-          >
-            <option value="">{city ? t.cart.selectZip : t.cart.cityFirst}</option>
-            {zipsForCity.map((entry) => (
-              <option key={entry.zip} value={entry.zip}>
-                {entry.zip} —{" "}
-                {t.cart.zoneMinOrder.replace("{amount}", formatCents(entry.minOrderCents))}
-                {entry.feeCents === 0
-                  ? `, ${t.cart.zoneFeeFree}`
-                  : `, ${t.cart.zoneFee.replace("{amount}", formatCents(entry.feeCents))}`}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        {/*
+          İki posta kodlu belediye — Aiterhofen'in bir kısmı 94330, bir kısmı
+          94315. Burada tarife de gerçekten değişebildiği için seçim müşteriye
+          bırakılır.
+        */}
+        {needsZipChoice && (
+          <Field label={t.cart.zipLabel} htmlFor="zip" error={errors.zip}>
+            <Select
+              id="zip"
+              value={zip}
+              invalid={Boolean(errors.zip)}
+              onChange={(e) => onZipChange(e.target.value)}
+              autoComplete="postal-code"
+            >
+              <option value="">{t.cart.selectZip}</option>
+              {zipsForCity.map((entry) => (
+                <option key={entry.zip} value={entry.zip}>
+                  {entry.zip} — {tariffOf(entry)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
       </div>
+
+      {/*
+        Posta kodu ve tarife: müşteri sipariş vermeden önce ne ödeyeceğini
+        görmek zorunda (PAngV § 6). Kod da burada gösterilir — müşteri hiç
+        yazmadığı için en az bir kez okuyabilmesi gerekir.
+      */}
+      {selectedZone && (
+        <p className="font-mono text-[11px] text-smoke">
+          {t.cart.zipLabel} {selectedZone.zip} · {tariffOf(selectedZone)}
+        </p>
+      )}
 
       {etaMinutes !== null && zip && (
         <p className="font-mono text-[11px] text-amber">

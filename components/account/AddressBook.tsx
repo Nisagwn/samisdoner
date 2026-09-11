@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import type { AddressRecord } from "@/lib/account/addresses";
+import { useDeliveryCities, zipsForCity } from "@/lib/delivery/useDeliveryCities";
 import { accountTexts } from "./texts";
-import { PanelHeader, TextField } from "./fields";
+import { PanelHeader, SelectField, TextField } from "./fields";
 import { useScrollLock } from "@/lib/useScrollLock";
 
 /**
@@ -15,6 +16,14 @@ import { useScrollLock } from "@/lib/useScrollLock";
  * değişen hiçbir alan yok; "varsayılan yap" dışında her şey formda değişir ve
  * tek bir kayıtla yazılır. (Varsayılan seçimi bilinçli olarak tek tık: tek bir
  * bayrağı değiştirir, geri alması da tek tık.)
+ *
+ * Posta kodu **sorulmaz, türetilir**: müşteri listeden yerini seçer, kod ona
+ * göre dolar (bkz. `components/checkout/AddressFields`). Defterin ödeme
+ * formuyla aynı listeyi kullanması şart — defterde ödeme formunun kabul
+ * etmediği bir yer yazılabilseydi, müşteri onu seçtiğinde sipariş sunucuda
+ * reddedilirdi. Liste okunamazsa alanlar serbest metne düşer; adresini
+ * düzeltmek isteyen müşteriyi teslimat ucunun o anki durumu yüzünden formdan
+ * çıkarmak ölçüsüz olurdu.
  *
  * Adres burada **kopyalanmak üzere** tutulur: siparişe gönderilirken alanlar
  * siparişin içine yazılır, bağ kurulmaz. Bu yüzden bir adresi silmek ya da
@@ -77,6 +86,7 @@ export default function AddressBook({
   const [pendingDelete, setPendingDelete] = useState<AddressRecord | null>(null);
   useScrollLock(pendingDelete !== null);
 
+  const { cities, failed: citiesFailed } = useDeliveryCities();
   const full = addresses.length >= max;
 
   async function send(url: string, method: string, body?: unknown): Promise<boolean> {
@@ -140,6 +150,32 @@ export default function AddressBook({
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => (current ? { ...current, [key]: value } : current));
+
+  /** Serbest metne düşme koşulu: liste okunamadı ya da açık bölge yok. */
+  const freeText = citiesFailed || (cities !== null && cities.length === 0);
+
+  const draftZips = zipsForCity(cities, draft?.city ?? "");
+
+  /*
+   * Düzenlenen adresin yeri listede olmayabilir: işletme o bölgeyi kapatmış
+   * olabilir. Seçenek olarak eklenmezse açılır liste boş görünür ve kaydetmek
+   * müşterinin adresini sessizce siler — kapanmış bir bölge, kayıtlı adresi
+   * bozmak için sebep değil.
+   */
+  const cityOptions = useMemo(() => {
+    const names = (cities ?? []).map((entry) => entry.city);
+    const current = draft?.city.trim();
+    if (current && !names.includes(current)) names.push(current);
+    return names.sort((a, b) => a.localeCompare(b, "de"));
+  }, [cities, draft?.city]);
+
+  /* Tek posta kodu olan yerde seçim yaptırmanın anlamı yok. */
+  useEffect(() => {
+    if (!draft || draftZips.length !== 1) return;
+    if (draft.zip !== draftZips[0].zip) {
+      setDraft((current) => (current ? { ...current, zip: draftZips[0].zip } : current));
+    }
+  }, [draft, draftZips]);
 
   return (
     <section>
@@ -284,25 +320,76 @@ export default function AddressBook({
               />
             </div>
 
-            <div className="grid grid-cols-[7rem_1fr] gap-4">
-              <TextField
-                id="zip"
-                label={t.zip}
-                value={draft.zip}
-                inputMode="numeric"
-                maxLength={5}
-                autoComplete="postal-code"
-                onChange={(e) => set("zip", e.target.value.replace(/\D/g, "").slice(0, 5))}
-              />
-              <TextField
-                id="city"
-                label={t.city}
-                value={draft.city}
-                autoComplete="address-level2"
-                maxLength={80}
-                onChange={(e) => set("city", e.target.value)}
-              />
-            </div>
+            {freeText ? (
+              /* Liste okunamadı — müşteri adresini yine de yazabilmeli. */
+              <div className="grid grid-cols-[7rem_1fr] gap-4">
+                <TextField
+                  id="zip"
+                  label={t.zip}
+                  value={draft.zip}
+                  inputMode="numeric"
+                  maxLength={5}
+                  autoComplete="postal-code"
+                  onChange={(e) => set("zip", e.target.value.replace(/\D/g, "").slice(0, 5))}
+                />
+                <TextField
+                  id="city"
+                  label={t.city}
+                  value={draft.city}
+                  autoComplete="address-level2"
+                  maxLength={80}
+                  onChange={(e) => set("city", e.target.value)}
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className={draftZips.length > 1 ? "grid gap-4 sm:grid-cols-2" : undefined}>
+                  <SelectField
+                    id="city"
+                    label={t.city}
+                    value={draft.city}
+                    autoComplete="address-level2"
+                    onChange={(e) => {
+                      set("city", e.target.value);
+                      // Yer değişince eski posta kodu o yere ait olmayabilir.
+                      set("zip", "");
+                    }}
+                  >
+                    <option value="">{cities === null ? t.loading : t.selectCity}</option>
+                    {cityOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </SelectField>
+
+                  {/* İki posta kodlu yer — burada seçim gerçekten müşterinin. */}
+                  {draftZips.length > 1 && (
+                    <SelectField
+                      id="zip"
+                      label={t.zip}
+                      value={draft.zip}
+                      autoComplete="postal-code"
+                      onChange={(e) => set("zip", e.target.value)}
+                    >
+                      <option value="">{t.selectZip}</option>
+                      {draftZips.map((entry) => (
+                        <option key={entry.zip} value={entry.zip}>
+                          {entry.zip}
+                        </option>
+                      ))}
+                    </SelectField>
+                  )}
+                </div>
+
+                {/* Kod hiç yazılmadığı için en az bir kez okunabilmeli. */}
+                {draft.zip && draftZips.length <= 1 && (
+                  <p className="font-mono text-[11px] text-smoke">
+                    {t.zip} {draft.zip}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <TextField
