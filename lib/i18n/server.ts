@@ -7,7 +7,7 @@ import { LANG_COOKIE, normalizeLanguage, type Language } from "./config";
  * Sunucu tarafında dil çözümü.
  *
  * Sunucu bileşenleri metni buradan alır; `useLanguage()` yalnızca gerçekten
- * istemcide yaşayan bileşenler (sepet, navbar, yapılandırıcı) içindir.
+ * istemcide yaşayan bileşenler (sepet, navbar) içindir.
  *
  * Kazanç ölçülebilir: yalnızca çeviri okumak için `"use client"` yazılmış yedi
  * bölüm vardı ve her biri iki dilin **tamamını** tarayıcıya taşıyordu. Metin

@@ -88,68 +88,6 @@ export function Toggle({
   );
 }
 
-/**
- * Sabit listeden çoklu seçim ızgarası.
- *
- * Alerjen ve katkı maddesi için. Açılır liste yerine ızgara olmasının sebebi
- * bu ekranda ne aradığımız: işletmeci "hangilerini işaretledim" sorusunu tek
- * bakışta cevaplayabilmeli. Kapalı bir listede seçili olmayan on üç maddeyi
- * görmek için açmak gerekir; alerjende gözden kaçan madde sağlık riskidir.
- *
- * Her kutu kendi etiketinin tamamını tıklanabilir alan yapar (`<label>`
- * sarmalıyor), tabletle işaretlemek için gereken şey bu.
- */
-export function CheckGrid<T extends string>({
-  options,
-  selected,
-  onChange,
-  legend,
-  hint,
-}: {
-  options: readonly { code: T; label: string }[];
-  selected: readonly T[];
-  onChange: (next: T[]) => void;
-  legend: string;
-  hint?: string;
-}) {
-  const toggle = (code: T) => {
-    const set = new Set(selected);
-    if (set.has(code)) set.delete(code);
-    else set.add(code);
-    // Sıra girişten değil sabit listeden gelsin: aynı seçim her kayıtta
-    // aynı diziyi üretsin diye.
-    onChange(options.filter((o) => set.has(o.code)).map((o) => o.code));
-  };
-
-  return (
-    <fieldset className="min-w-0 border border-line bg-void px-4 py-3">
-      <legend className="tag px-1 text-smoke">{legend}</legend>
-      {hint && <p className="mb-3 text-xs leading-relaxed text-smoke/70">{hint}</p>}
-      <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
-        {options.map((option) => {
-          const on = selected.includes(option.code);
-          return (
-            <label
-              key={option.code}
-              className={`flex min-h-[36px] cursor-pointer items-center gap-2.5 px-2 py-1 text-xs transition-colors ${
-                on ? "text-amber" : "text-smoke hover:text-bone"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={on}
-                onChange={() => toggle(option.code)}
-                className="focus-ring h-4 w-4 shrink-0 accent-[#FFC247]"
-              />
-              <span className="leading-tight">{option.label}</span>
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
 export function Button({
   variant = "primary",
   className = "",

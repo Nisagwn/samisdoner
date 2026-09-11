@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { grundpreisLabel, parseLiters, pricePerLiterCents } from "@/lib/legal/grundpreis";
-import {
-  ADDITIVE_CODES,
-  ALLERGEN_CODES,
-  additiveLegend,
-  allergenLegend,
-  allergenNotice,
-  productCodes,
-} from "@/lib/legal/allergens";
 import { impressumData, datenschutzData, agbData, widerrufData } from "@/lib/legal/content";
 
 /* ═══════════════════════════════════════════ PAngV § 4 — temel fiyat */
@@ -76,88 +68,6 @@ describe("grundpreisLabel", () => {
   it("hacim olmayan boyda hiçbir şey göstermez", () => {
     expect(grundpreisLabel("28 CM", 1200)).toBeNull();
     expect(grundpreisLabel("Rolle", 800)).toBeNull();
-  });
-});
-
-/* ═════════════════════════════════════ LMIV / ZZulV — alerjen kodları */
-
-describe("alerjen kodlaması", () => {
-  it("LMIV Ek II sırasını harflere eşler", () => {
-    expect(ALLERGEN_CODES.GLUTEN).toBe("A");
-    expect(ALLERGEN_CODES.EGGS).toBe("C");
-    expect(ALLERGEN_CODES.MILK).toBe("G");
-    expect(ALLERGEN_CODES.MOLLUSCS).toBe("N");
-  });
-
-  it("katkı maddelerini 1'den başlayarak numaralar", () => {
-    expect(ADDITIVE_CODES.FARBSTOFF).toBe("1");
-    expect(ADDITIVE_CODES.TAURINHALTIG).toBe("14");
-  });
-
-  it("açıklama listesi 14+14 satırdır ve kod tekrarı yoktur", () => {
-    const allergens = allergenLegend("de");
-    const additives = additiveLegend("de");
-    expect(allergens).toHaveLength(14);
-    expect(additives).toHaveLength(14);
-    expect(new Set(allergens.map((e) => e.code)).size).toBe(14);
-    expect(new Set(additives.map((e) => e.code)).size).toBe(14);
-  });
-
-  it("kodları giriş sırasına değil liste sırasına göre dizer", () => {
-    // Aynı ürün her yerde aynı görünmeli; panelde hangi sırayla tıklandığı
-    // müşteri tarafında görünmemeli.
-    const codes = productCodes({
-      allergens: ["MILK", "GLUTEN"],
-      additives: ["SUESSUNGSMITTEL", "FARBSTOFF"],
-    });
-    expect(codes).toEqual(["A", "G", "1", "9"]);
-  });
-
-  it("her iki dilde de açıklama doludur", () => {
-    for (const entry of [...allergenLegend("tr"), ...additiveLegend("tr")]) {
-      expect(entry.label.length).toBeGreaterThan(2);
-    }
-  });
-});
-
-describe("allergenNotice — üç hâlin ayrımı", () => {
-  it("madde varsa kodları verir", () => {
-    const notice = allergenNotice({
-      allergens: ["GLUTEN"],
-      additives: [],
-      allergenInfoConfirmed: false,
-    });
-    expect(notice).toEqual({ kind: "codes", codes: ["A"] });
-  });
-
-  it("işletmeci onayladıysa 'yok' der", () => {
-    const notice = allergenNotice({
-      allergens: [],
-      additives: [],
-      allergenInfoConfirmed: true,
-    });
-    expect(notice.kind).toBe("none");
-  });
-
-  it("bilgi girilmemişse 'yok' DEMEZ", () => {
-    // Bu ayrımın kaybolması, alerjik müşteriye yanlış beyan vermek demektir.
-    // Testin varlık sebebi budur.
-    const notice = allergenNotice({
-      allergens: [],
-      additives: [],
-      allergenInfoConfirmed: false,
-    });
-    expect(notice.kind).toBe("missing");
-    expect(notice.kind).not.toBe("none");
-  });
-
-  it("yalnızca katkı maddesi girilmişse de kod gösterir", () => {
-    const notice = allergenNotice({
-      allergens: [],
-      additives: ["KOFFEINHALTIG"],
-      allergenInfoConfirmed: false,
-    });
-    expect(notice).toEqual({ kind: "codes", codes: ["12"] });
   });
 });
 

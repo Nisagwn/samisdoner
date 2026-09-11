@@ -123,10 +123,13 @@ export default function Hero() {
   ];
 
   return (
+    /* Üst dolgu sabit header'ın gerçek yüksekliğidir (`--nav-h`, globals.css).
+       Önce elle yazılmış `pt-16` (64 px) vardı; header 68/72 px olduğu için
+       başlık her ölçekte birkaç piksel navbarın altına giriyordu. */
     <section
       ref={root}
       id="top"
-      className="relative min-h-[100svh] w-full overflow-hidden bg-void flex items-center justify-center pt-16 md:pt-0"
+      className="relative min-h-[100svh] w-full overflow-hidden bg-void flex items-center justify-center pt-[var(--nav-h)] md:pt-0"
     >
       {/* arka plan sahnesi */}
       <div className="absolute inset-0">

@@ -87,9 +87,6 @@ export default function LegalDocument({ data }: { data: LegalDocumentData }) {
           <Link href="/widerruf" className="hover:text-amber transition-colors">
             {lang === "tr" ? "Cayma hakkı" : "Widerruf"}
           </Link>
-          <Link href="/allergene" className="hover:text-amber transition-colors">
-            {lang === "tr" ? "Alerjenler" : "Allergene"}
-          </Link>
         </nav>
       </footer>
     </article>

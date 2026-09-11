@@ -4,7 +4,7 @@ import { z } from "zod";
  * Sipariş girdisi doğrulaması (Zod).
  *
  * Kritik kural: burada **fiyat alanı yoktur**. İstemci yalnızca "hangi ürün,
- * hangi boy, hangi seçenekler, kaç adet" der. Tutar her zaman sunucuda,
+ * hangi boy, kaç adet" der. Tutar her zaman sunucuda,
  * katalogtaki güncel fiyatlardan hesaplanır — istek gövdesi kurcalanarak
  * ucuza sipariş verilemez.
  */
@@ -19,19 +19,7 @@ const productLineSchema = z.object({
   qty: z.number().int().min(1).max(MAX_QTY),
 });
 
-const builderLineSchema = z.object({
-  kind: z.literal("builder"),
-  bread: z.string().min(1).max(60),
-  protein: z.string().min(1).max(60),
-  sauce: z.string().min(1).max(60),
-  veggies: z.array(z.string().min(1).max(60)).max(20),
-  qty: z.number().int().min(1).max(MAX_QTY),
-});
-
-export const cartLineSchema = z.discriminatedUnion("kind", [
-  productLineSchema,
-  builderLineSchema,
-]);
+export const cartLineSchema = productLineSchema;
 
 /**
  * Misafir müşteri bilgileri.

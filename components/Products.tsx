@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { Button, buttonClass } from "@/components/ui";
 import { formatPrice, type Product } from "@/lib/admin/types";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useCart } from "@/lib/cart";
@@ -101,7 +102,8 @@ export default function Products({
                     {desc && <p className="text-smoke text-sm leading-relaxed mb-6">{desc}</p>}
                   </div>
 
-                  <button
+                  <Button
+                    variant="outline"
                     onClick={() => {
                       add({
                         kind: "product",
@@ -110,10 +112,10 @@ export default function Products({
                       });
                       openCart();
                     }}
-                    className="focus-ring w-full border border-amber text-amber font-display font-semibold py-3 hover:bg-amber hover:text-void transition-colors tag"
+                    className="w-full"
                   >
                     {t.menuGrid.addToCart}
-                  </button>
+                  </Button>
                 </div>
               );
             })}
@@ -122,10 +124,7 @@ export default function Products({
 
         {showMenuLink && (
           <div className="mt-10 flex justify-center">
-            <Link
-              href="/speisekarte"
-              className="focus-ring tag border border-amber bg-amber/10 text-amber px-7 py-3.5 hover:bg-amber hover:text-void transition-colors"
-            >
+            <Link href="/speisekarte" className={buttonClass("outline")}>
               {t.products.seeMenu}
             </Link>
           </div>

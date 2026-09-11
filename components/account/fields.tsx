@@ -14,7 +14,7 @@
  * bir kez kuruyoruz.
  */
 
-import { Field, TextInput } from "@/components/ui";
+import { Field, Select, TextInput } from "@/components/ui";
 
 export function TextField({
   id,
@@ -26,6 +26,25 @@ export function TextField({
     <div className="min-w-0">
       <Field label={label} htmlFor={id} hint={hint}>
         <TextInput id={id} name={id} {...props} />
+      </Field>
+    </div>
+  );
+}
+
+/** Açılır liste — `TextField` ile aynı sözleşme, aynı hizalama. */
+export function SelectField({
+  id,
+  label,
+  hint,
+  children,
+  ...props
+}: { id: string; label: string; hint?: string } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <div className="min-w-0">
+      <Field label={label} htmlFor={id} hint={hint}>
+        <Select id={id} name={id} {...props}>
+          {children}
+        </Select>
       </Field>
     </div>
   );

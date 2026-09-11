@@ -40,12 +40,6 @@ export default async function AdminDashboard() {
    */
   const attention = [
     {
-      count: stats.missingLegalInfo,
-      label: "üründe alerjen bilgisi eksik",
-      hint: "Yasal zorunluluk (LMIV Art. 14).",
-      tone: "text-flame",
-    },
-    {
       count: stats.outOfStock,
       label: "ürün tükendi olarak işaretli",
       hint: "Menüde görünmüyor.",
@@ -164,7 +158,7 @@ export default async function AdminDashboard() {
 
         {attention.length === 0 ? (
           <p className="border border-line bg-char px-5 py-6 text-sm text-smoke">
-            Bekleyen bir şey yok — tüm ürünler yayında ve bilgileri tam.
+            Bekleyen bir şey yok — tüm ürünler yayında ve stokta.
           </p>
         ) : (
           <ul className="divide-y divide-line border border-line">
@@ -178,7 +172,7 @@ export default async function AdminDashboard() {
                   <span className="block text-xs text-smoke">{row.hint}</span>
                 </span>
                 <Link
-                  href="/admin/products"
+                  href="/admin/menu"
                   className="focus-ring tag shrink-0 text-smoke transition-colors hover:text-amber"
                 >
                   Aç →
@@ -215,13 +209,13 @@ export default async function AdminDashboard() {
 
       <div className="mt-4 flex flex-wrap gap-3">
         <Link
-          href="/admin/products"
+          href="/admin/menu"
           className="focus-ring tag border border-amber px-5 py-3 text-amber transition-colors hover:bg-amber hover:text-void"
         >
-          ÜRÜNLERİ YÖNET →
+          MENÜYÜ YÖNET →
         </Link>
         <Link
-          href="/admin/categories"
+          href="/admin/menu?sekme=kategoriler"
           className="focus-ring tag border border-line px-5 py-3 text-bone transition-colors hover:border-amber hover:text-amber"
         >
           KATEGORİLER →

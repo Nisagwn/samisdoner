@@ -3,9 +3,8 @@ import { formatEuro } from "@/lib/money";
 /**
  * Katalog veri modeli.
  *
- * Mevcut `data/menu.ts` yapısı (isim, açıklama, boyut varyasyonları) korunur;
- * üzerine admin panelinin ihtiyaç duyduğu alanlar eklenir: indirimli fiyat,
- * aktif/pasif ve stok durumu.
+ * Menü kaydının şekli: isim, açıklama, boyut varyasyonları ve panelin ihtiyaç
+ * duyduğu alanlar — indirimli fiyat, aktif/pasif ve stok durumu.
  *
  * Fiyatlar burada **sayı** olarak (Euro) tutulur; gösterimdeki "7,00 €"
  * biçimlendirmesi `formatPrice` ile yapılır. Kaynak dosyadaki string fiyatlar
@@ -58,16 +57,6 @@ export type Product = {
    * beri tüm yemekler %7, tüm içecekler %19.
    */
   vatRate: number;
-  /** LMIV Ek II — bildirimi zorunlu alerjenler. */
-  allergens: Allergen[];
-  /** ZZulV — yazılı bildirimi zorunlu katkı maddesi sınıfları. */
-  additives: Additive[];
-  /**
-   * Boş liste "bilgi girilmedi" ile "madde yok" arasında ayrım yapamaz;
-   * bu bayrak işletmecinin bilinçli "yok" beyanını kaydeder. False ise ürün
-   * eksik bilgiyle yayında sayılır.
-   */
-  allergenInfoConfirmed: boolean;
   /**
    * § 312g Abs. 2 BGB — cayma hakkı istisnası yalnızca çabuk bozulan malda.
    * Kapalı şişe içecek bozulmaz; istisnaya girmez.
@@ -84,45 +73,6 @@ export type Category = {
   note: string;
   noteTr: string;
   sortOrder: number;
-};
-
-/* ------------------------------------------------------- döner yapılandırıcı */
-
-/**
- * "Kendin Seç" bölümündeki tek bir seçenek (ekmek türü, ekstra et, sos …).
- *
- * `price` bir **ek ücrettir** (Euro), taban fiyatın üstüne biner. 0 = dahil.
- * Fiyat burada, yani katalogda durur; arayüzde sabit fiyat tutulmaz.
- */
-export type BuilderOption = {
-  id: string;
-  label: string;
-  labelDe: string;
-  desc: string;
-  descDe: string;
-  /** Taban fiyata eklenen ücret (€). */
-  price: number;
-  kcal: number;
-  image: string | null;
-};
-
-export type BuilderGroupId = "bread" | "protein" | "veggies" | "sauce";
-
-export type BuilderGroup = {
-  id: BuilderGroupId;
-  /** "single" = tek seçim zorunlu, "multi" = istediğin kadar. */
-  mode: "single" | "multi";
-  options: BuilderOption[];
-};
-
-export type BuilderConfig = {
-  /**
-   * Taban fiyatın okunacağı katalog ürünü. Ürün silinir/bulunamazsa
-   * `fallbackBasePrice` kullanılır — yapılandırıcı fiyatsız kalmasın.
-   */
-  baseProductId: string | null;
-  fallbackBasePrice: number;
-  groups: BuilderGroup[];
 };
 
 /** Sipariş toplamına eklenen ücretler. Admin panelinden yönetilir. */
@@ -142,17 +92,16 @@ export type Catalog = {
   categories: Category[];
   products: Product[];
   settings: Settings;
-  builder: BuilderConfig;
 };
 
 /**
  * Depodaki şema sürümü.
  *
- * 1 → eski demo menüsü (`data/menu.ts`).
+ * 1 → eski demo menüsü.
  * 2 → gerçek karta (`data/speisekarte.ts`) + no/TR alanları + showOnHome.
- * 3 → fiyat tek kaynağa taşındı: `settings` (servis ücreti) ve `builder`
- *     (kendin seç seçenekleri + ek ücretleri) katalogun parçası oldu.
- *     Göç sırasında ürün/kategori kayıtları korunur.
+ * 3 → fiyat tek kaynağa taşındı: servis ücreti (`settings`) katalogun parçası
+ *     oldu. Bu sürümde ayrıca "kendin seç" yapılandırıcısı vardı; bölüm
+ *     kaldırıldığında ayarları okunmaz oldu, kayıtlar yerinde bırakıldı.
  */
 export const CATALOG_VERSION = 3;
 
@@ -193,107 +142,7 @@ export function slugify(input: string): string {
     .slice(0, 60);
 }
 
-/* ------------------------------------------- alerjen ve katkı maddesi (yasal) */
-
-/**
- * LMIV (AB 1169/2011) Ek II — bildirimi zorunlu 14 alerjen.
- *
- * Art. 14/44 uyarınca bu bilgi, sipariş **bağlayıcı hale gelmeden önce**
- * verilmek zorundadır; yalnızca sipariş onayında göstermek yeterli değildir.
- * Açık satılan üründe (döner tam olarak budur) de geçerlidir.
- */
-export const ALLERGENS = [
-  "GLUTEN",
-  "CRUSTACEANS",
-  "EGGS",
-  "FISH",
-  "PEANUTS",
-  "SOYBEANS",
-  "MILK",
-  "NUTS",
-  "CELERY",
-  "MUSTARD",
-  "SESAME",
-  "SULPHITES",
-  "LUPIN",
-  "MOLLUSCS",
-] as const;
-
-export type Allergen = (typeof ALLERGENS)[number];
-
-export const ALLERGEN_LABELS: Record<Allergen, { de: string; tr: string }> = {
-  GLUTEN: { de: "Glutenhaltiges Getreide", tr: "Glüten içeren tahıllar" },
-  CRUSTACEANS: { de: "Krebstiere", tr: "Kabuklu deniz ürünleri" },
-  EGGS: { de: "Eier", tr: "Yumurta" },
-  FISH: { de: "Fisch", tr: "Balık" },
-  PEANUTS: { de: "Erdnüsse", tr: "Yer fıstığı" },
-  SOYBEANS: { de: "Soja", tr: "Soya" },
-  MILK: { de: "Milch (inkl. Laktose)", tr: "Süt (laktoz dahil)" },
-  NUTS: { de: "Schalenfrüchte (Nüsse)", tr: "Sert kabuklu yemişler" },
-  CELERY: { de: "Sellerie", tr: "Kereviz" },
-  MUSTARD: { de: "Senf", tr: "Hardal" },
-  SESAME: { de: "Sesamsamen", tr: "Susam" },
-  SULPHITES: { de: "Schwefeldioxid und Sulphite", tr: "Kükürt dioksit ve sülfitler" },
-  LUPIN: { de: "Lupinen", tr: "Acı bakla" },
-  MOLLUSCS: { de: "Weichtiere", tr: "Yumuşakçalar" },
-};
-
-/**
- * ZZulV — kenntlichmachungspflichtige katkı maddesi sınıfları.
- *
- * LMIV alerjenlerinden **ayrı** bir Alman yükümlülüğü. İşlevsel sınıf adı
- * yeterlidir ("mit Farbstoff"), tek tek E-numarası gerekmez; ama bildirimin
- * **yazılı** olması şarttır — "personele sorunuz" katkı maddelerinde geçerli
- * bir bildirim değildir.
- */
-export const ADDITIVES = [
-  "FARBSTOFF",
-  "KONSERVIERUNGSSTOFF",
-  "ANTIOXIDATIONSMITTEL",
-  "GESCHMACKSVERSTAERKER",
-  "GESCHWEFELT",
-  "GESCHWAERZT",
-  "GEWACHST",
-  "PHOSPHAT",
-  "SUESSUNGSMITTEL",
-  "PHENYLALANINQUELLE",
-  "ABFUEHREND",
-  "KOFFEINHALTIG",
-  "CHININHALTIG",
-  "TAURINHALTIG",
-] as const;
-
-export type Additive = (typeof ADDITIVES)[number];
-
-/** Almanca metinler yasal ifadelerdir; serbestçe değiştirilmemeli. */
-export const ADDITIVE_LABELS: Record<Additive, { de: string; tr: string }> = {
-  FARBSTOFF: { de: "mit Farbstoff", tr: "renklendirici içerir" },
-  KONSERVIERUNGSSTOFF: { de: "mit Konservierungsstoff", tr: "koruyucu içerir" },
-  ANTIOXIDATIONSMITTEL: { de: "mit Antioxidationsmittel", tr: "antioksidan içerir" },
-  GESCHMACKSVERSTAERKER: { de: "mit Geschmacksverstärker", tr: "aroma güçlendirici içerir" },
-  GESCHWEFELT: { de: "geschwefelt", tr: "kükürtlenmiş" },
-  GESCHWAERZT: { de: "geschwärzt", tr: "siyahlaştırılmış" },
-  GEWACHST: { de: "gewachst", tr: "mumlanmış" },
-  PHOSPHAT: { de: "mit Phosphat", tr: "fosfat içerir" },
-  SUESSUNGSMITTEL: { de: "mit Süßungsmittel", tr: "tatlandırıcı içerir" },
-  PHENYLALANINQUELLE: { de: "enthält eine Phenylalaninquelle", tr: "fenilalanin kaynağı içerir" },
-  ABFUEHREND: { de: "kann bei übermäßigem Verzehr abführend wirken", tr: "aşırı tüketimde laksatif etki" },
-  KOFFEINHALTIG: { de: "koffeinhaltig", tr: "kafein içerir" },
-  CHININHALTIG: { de: "chininhaltig", tr: "kinin içerir" },
-  TAURINHALTIG: { de: "taurinhaltig", tr: "taurin içerir" },
-};
+/* ------------------------------------------------------------ vergi (yasal) */
 
 /** Geçerli KDV oranları. Başka bir değer kabul edilmez. */
 export const VAT_RATES = [7, 19] as const;
-
-/**
- * Bir ürünün yasal bilgi bakımından yayına hazır olup olmadığı.
- *
- * Alerjen listesi boş bırakılabilir — ama bu ancak işletmeci "bu üründe
- * bildirimi zorunlu alerjen yok" beyanını onayladıysa geçerlidir.
- */
-export function hasLegalInfo(
-  product: Pick<Product, "allergens" | "allergenInfoConfirmed">
-): boolean {
-  return product.allergens.length > 0 || product.allergenInfoConfirmed;
-}

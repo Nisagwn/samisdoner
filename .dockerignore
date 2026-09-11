@@ -1,0 +1,28 @@
+# İmaja girmemesi gerekenler.
+#
+# node_modules özellikle önemli: Windows'ta kurulmuş ikili dosyalar (Prisma
+# motoru, sharp) Linux kabında çalışmaz. Bağımlılıklar imajın içinde yeniden
+# kurulur.
+node_modules
+.next
+.next-dev
+out
+
+# Gizli anahtarlar imaja **asla** girmez; ortam değişkeni olarak verilir.
+.env
+.env.*
+!.env.example
+!.env.prod.example
+
+.git
+.gitignore
+.claude
+backups
+*.log
+*.tsbuildinfo
+next-env.d.ts
+tests
+envtest
+README.md
+docker-compose*.yml
+Dockerfile

@@ -3,9 +3,10 @@ import type { CartLineInput } from "@/lib/admin/store";
 /**
  * İstemciden gelen sepet tarifinin doğrulanması.
  *
- * Gövde tamamen güvenilmezdir: yalnızca kimlikler ve adet okunur, para ile
- * ilgili hiçbir alan kabul edilmez. Fiyat hesabı her zaman sunucuda
- * (`priceCart`) yapılır.
+ * Gövde tamamen güvenilmezdir: yalnızca ürün kimliği, boy ve adet okunur.
+ * Para ile ilgili hiçbir alan kabul edilmez — fiyat hesabı her zaman sunucuda
+ * (`priceCart`) yapılır. Tanınmayan satır türü sessizce düşer; kaldırılan
+ * yapılandırıcının satırları da buradan geçemez.
  */
 
 const MAX_LINES = 60;
@@ -31,21 +32,6 @@ export function parseCartLines(value: unknown): CartLineInput[] {
   for (const raw of value.slice(0, MAX_LINES)) {
     if (typeof raw !== "object" || raw === null) continue;
     const entry = raw as Record<string, unknown>;
-
-    if (entry.kind === "builder") {
-      const bread = id(entry.bread);
-      const protein = id(entry.protein);
-      const sauce = id(entry.sauce);
-      if (!bread || !protein || !sauce) continue;
-      const veggies = Array.isArray(entry.veggies)
-        ? entry.veggies
-            .slice(0, 20)
-            .map(id)
-            .filter((v): v is string => v !== null)
-        : [];
-      lines.push({ kind: "builder", bread, protein, sauce, veggies, qty: qty(entry.qty) });
-      continue;
-    }
 
     if (entry.kind === "product") {
       const productId = id(entry.productId);

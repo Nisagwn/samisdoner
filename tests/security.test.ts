@@ -191,8 +191,13 @@ describe("sepet girdisi ayıklama", () => {
     expect(parseCartLines(many).length).toBeLessThanOrEqual(60);
   });
 
-  it("eksik yapılandırıcı seçimini atar", () => {
-    expect(parseCartLines([{ kind: "builder", bread: "b", protein: "p", qty: 1 }])).toEqual([]);
+  it("kaldırılan yapılandırıcının satırlarını atar", () => {
+    // Bu satırlar ziyaretçilerin localStorage'ında hâlâ duruyor olabilir.
+    expect(
+      parseCartLines([
+        { kind: "builder", bread: "b", protein: "p", sauce: "s", veggies: [], qty: 1 },
+      ])
+    ).toEqual([]);
   });
 
   it("tanınmayan ve bozuk satırları atar", () => {

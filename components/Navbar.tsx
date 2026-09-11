@@ -25,8 +25,8 @@ export default function Navbar() {
    * İki tür bağlantı var ve ayrımı `exact` alanı taşır:
    *  - **Sayfa** bağlantıları (`/`, `/speisekarte`, `/ueber-uns`) aktif
    *    işaretlenebilir; hangi sayfada olduğunuzu gösterirler.
-   *  - **Çapa** bağlantıları (`/#builder`, `/#filialen`) ana sayfanın birer
-   *    bölümüdür, sayfa değil — hiçbir zaman aktif işaretlenmezler.
+   *  - **Çapa** bağlantısı (`/#filialen`) ana sayfanın bir bölümüdür, sayfa
+   *    değil — hiçbir zaman aktif işaretlenmez.
    *
    * Tanıtım bölümleri `/ueber-uns` sayfasına taşındığı için "Hakkımızda" artık
    * ana sayfanın bir çapasına değil o sayfaya gider. Franchise bağlantısı
@@ -36,7 +36,6 @@ export default function Navbar() {
   const LINKS: { href: string; label: string; exact?: boolean }[] = [
     { href: "/", label: t.nav.home, exact: true },
     { href: "/speisekarte", label: t.nav.menu },
-    { href: "/#builder", label: t.nav.buildYourOwn },
     { href: "/#filialen", label: t.nav.filialen },
     { href: "/ueber-uns", label: t.nav.unternehmen },
   ];
@@ -45,8 +44,8 @@ export default function Navbar() {
    * Bağlantı bulunduğumuz sayfayı mı gösteriyor.
    *
    * Çapa bağlantıları (`#` içerenler) her zaman pasiftir: ana sayfadayken
-   * "Kendin seç"i de işaretlemek, beş bağlantıdan üçünü aynı anda vurgulardı
-   * ve işaret hiçbir şey anlatmazdı.
+   * "Konum"u da işaretlemek iki bağlantıyı aynı anda vurgulardı ve işaret
+   * hiçbir şey anlatmazdı.
    *
    * "Ana Sayfa" tam eşleşme ister; `startsWith` kullanılsaydı "/" her yolun
    * ön eki olduğu için her sayfada aktif görünürdü.
@@ -134,7 +133,7 @@ export default function Navbar() {
           {/* Cart Button */}
           <button
             onClick={openCart}
-            aria-label={`${t.nav.cart} — ${t.builder.cartItemCount.replace("{count}", String(count))}`}
+            aria-label={`${t.nav.cart} — ${t.nav.cartItemCount.replace("{count}", String(count))}`}
             className="focus-ring relative tag border border-amber text-amber px-2.5 sm:px-3 md:px-4 py-2 hover:bg-amber hover:text-void transition-colors"
           >
             {t.nav.cart}

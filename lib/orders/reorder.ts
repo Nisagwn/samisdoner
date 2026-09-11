@@ -7,6 +7,8 @@ import type { CartLineDraft } from "@/lib/cart";
  * girdisidir. Yine de körü körüne güvenilmez: veri JSON sütunundan geliyor ve
  * şema zamanla değişebilir. Tanımadığımız biçim sessizce atlanır — "tekrar
  * sipariş" düğmesinin eksik çıkması, sepete bozuk satır koymaktan iyidir.
+ * Kaldırılan yapılandırıcının satırları da buraya düşer: eski siparişlerde
+ * duruyorlar ama artık sepete geri konamazlar.
  *
  * Menüden kalkmış ürünler burada elenmez: sepete eklendiklerinde fiyat ucu
  * onları "artık yok" olarak işaretler ve sepet uyarıyı zaten gösterir. Aynı
@@ -15,26 +17,6 @@ import type { CartLineDraft } from "@/lib/cart";
 export function toCartDraft(options: unknown, qty = 1): CartLineDraft | null {
   if (typeof options !== "object" || options === null) return null;
   const line = options as Record<string, unknown>;
-
-  if (line.kind === "builder") {
-    if (
-      typeof line.bread !== "string" ||
-      typeof line.protein !== "string" ||
-      typeof line.sauce !== "string"
-    ) {
-      return null;
-    }
-    return {
-      kind: "builder",
-      bread: line.bread,
-      protein: line.protein,
-      sauce: line.sauce,
-      veggies: Array.isArray(line.veggies)
-        ? line.veggies.filter((v): v is string => typeof v === "string")
-        : [],
-      qty,
-    };
-  }
 
   if (line.kind === "product" && typeof line.productId === "string") {
     return {

@@ -60,7 +60,6 @@ export default async function Footer() {
               <li><Link href="/datenschutz" className="hover:text-amber transition-colors">{t.footer.privacy}</Link></li>
               <li><Link href="/agb" className="hover:text-amber transition-colors">{t.footer.terms}</Link></li>
               <li><Link href="/widerruf" className="hover:text-amber transition-colors">{t.footer.withdrawal}</Link></li>
-              <li><Link href="/allergene" className="hover:text-amber transition-colors">{t.footer.allergens}</Link></li>
             </ul>
           </div>
 

@@ -1,0 +1,23 @@
+{
+  // Next'in önerdiği taban: erişilebilirlik (jsx-a11y), React kancaları ve
+  // Core Web Vitals'ı bozan kalıplar. Ayrıca bir stil kuralı eklenmedi —
+  // biçimlendirme tartışması kod incelemesinden alınıp araca verilecekse
+  // bunun yeri Prettier'dır, lint değil.
+  "extends": ["next/core-web-vitals"],
+
+  "ignorePatterns": [".next", ".next-dev", "node_modules", "public"],
+
+  "rules": {
+    // Markanın kendisi "SAMİ´S // DÖNER" — logodaki iki eğik çizgi JSX metni
+    // içinde geçiyor ve bu kural onu unutulmuş bir "// yorum" sanıyor. Kuralın
+    // yakaladığı gerçek hata (JSX'e yanlışlıkla yazılmış satır yorumu) nadir;
+    // logo ise her sayfada. Kural açık kalsaydı her logo kullanımı bir
+    // susturma satırı gerektirirdi.
+    "react/jsx-no-comment-textnodes": "off",
+
+    // Görsel <img> ile değil next/image ile konur: boyutlandırma, webp'e
+    // çevirme ve tembel yükleme onun işi. Uyarı değil hata — kaçan bir <img>
+    // mobil veride fark edilmeden megabaytlara mal olur.
+    "@next/next/no-img-element": "error"
+  }
+}

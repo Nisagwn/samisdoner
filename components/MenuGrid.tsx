@@ -4,13 +4,12 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import Link from "next/link";
 import type { MenuItem, MenuSection, MenuVariant } from "@/data/speisekarte";
-import { additiveLegend, allergenLegend } from "@/lib/legal/allergens";
+import AllergenWarning from "@/components/legal/AllergenWarning";
 import { useCart } from "@/lib/cart";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { Button } from "@/components/ui";
 import { useLanguage, type Language } from "@/lib/i18n/LanguageContext";
-import { BUSINESS_INFO } from "@/data/businessInfo";
 
 /**
  * Karta (Speisekarte) gövdesi — sitenin sipariş yüzeyi.
@@ -145,7 +144,6 @@ export default function MenuGrid({ sections }: Props) {
           <p className="tag text-smoke max-w-[280px]">{t.menuGrid.subText}</p>
         </div>
 
-        <AllergenNotice lang={lang} />
       </div>
 
       {/* Kategori şeridi + arama.
@@ -248,7 +246,9 @@ export default function MenuGrid({ sections }: Props) {
           ))}
         </div>
       </div>
-      <AllergenLegend lang={lang} />
+      <div className="mx-auto mt-20 w-full max-w-5xl px-5">
+        <AllergenWarning />
+      </div>
     </section>
   );
 }
@@ -343,7 +343,6 @@ function MenuRow({ item, lang }: { item: MenuItem; lang: Language }) {
 
         {desc && <p className="text-smoke text-sm leading-relaxed mt-1.5">{desc}</p>}
 
-        <AllergenCodes item={item} lang={lang} />
 
         {variants.length > 0 && (
           <div className="mt-3 pt-3 border-t border-line">
@@ -385,17 +384,14 @@ function MenuRow({ item, lang }: { item: MenuItem; lang: Language }) {
         )}
 
         {orderable ? (
-          <button
+          <Button
             type="button"
+            variant={justAdded ? "success" : "outline"}
             onClick={addToCart}
-            className={`focus-ring mt-4 w-full sm:w-auto border px-4 py-2.5 tag transition-colors ${
-              justAdded
-                ? "border-herb bg-herb/15 text-herb"
-                : "border-amber text-amber hover:bg-amber hover:text-void"
-            }`}
+            className="mt-4 w-full sm:w-auto"
           >
             {justAdded ? t.menuGrid.added : t.menuGrid.addToCart}
-          </button>
+          </Button>
         ) : (
           // Basılı menü kopyasından gelen satır: katalog kimliği yok, sipariş
           // edilemez. Sessizce buton gizlemek yerine sebebi yazılır.
@@ -403,175 +399,5 @@ function MenuRow({ item, lang }: { item: MenuItem; lang: Language }) {
         )}
       </div>
     </li>
-  );
-}
-
-/**
- * Ürün satırındaki alerjen / katkı maddesi kodları.
- *
- * Üç hâl üç ayrı gösterim üretir ve **hiçbiri sessiz değildir**:
- *  - kodlar varsa kodlar,
- *  - işletmeci "bildirimi zorunlu madde yok" beyan ettiyse bunun yazısı,
- *  - bilgi hiç girilmemişse "lütfen sorunuz" uyarısı.
- *
- * Üçüncü hâli boş bırakmak, müşteriye "bu üründe alerjen yok" demekle aynı
- * izlenimi yaratır; LMIV Art. 14 açısından da yanlış bilgi vermek, bilgi
- * vermemekten daha ağırdır.
- */
-function AllergenCodes({ item, lang }: { item: MenuItem; lang: Language }) {
-  const notice = item.allergens ?? { kind: "missing" as const };
-
-  /*
-   * Bilgi girilmemişse satırda hiçbir şey yazılmaz.
-   *
-   * Önceden burada her ürün için kırmızı bir "lütfen sorunuz" satırı vardı.
-   * Panelde alerjen alanı henüz bulunmadığı için bu, menüdeki YÜZ ürünün
-   * tamamında birden yanıyordu; hiçbir şey ayırt etmeyen bir uyarı, uyarı
-   * olmaktan çıkıp gürültü olur ve okunmaz.
-   *
-   * Aynı bilgi sayfa başında tek ve sakin bir notta duruyor (`AllergenNotice`),
-   * kod açıklamaları da sayfanın altındaki listede (`AllergenLegend`) —
-   * LMIV Art. 21 açıklamanın aynı sayfada olmasını istiyor, ikisi de kalıyor.
-   *
-   * Bu bir görünüm düzeltmesidir, yasal çözüm değil: doğru çözüm panelden her
-   * ürünün bilgisini girmek. Girildiği anda aşağıdaki kod dalları kendiliğinden
-   * devreye girer, burada değişiklik gerekmez.
-   */
-  if (notice.kind === "missing") return null;
-
-  if (notice.kind === "none") {
-    return (
-      <p className="mt-2 font-mono text-[11px] text-smoke/70">
-        {lang === "tr"
-          ? "Bildirimi zorunlu alerjen/katkı maddesi yok."
-          : "Keine kennzeichnungspflichtigen Allergene oder Zusatzstoffe."}
-      </p>
-    );
-  }
-
-  return (
-    <p className="mt-2 font-mono text-[11px] text-smoke">
-      <span className="sr-only">
-        {lang === "tr" ? "Alerjen ve katkı maddesi kodları: " : "Allergene und Zusatzstoffe: "}
-      </span>
-      <span aria-hidden>{notice.codes.join(", ")}</span>
-    </p>
-  );
-}
-
-/**
- * Menünün başındaki tek alerjen notu.
- *
- * Ürün kartlarındaki satır satır uyarının yerini alır: aynı cümleyi yüz kez
- * tekrarlamak onu görünmez kılıyordu. Burada bir kez, sakin bir tonda ve
- * telefonla birlikte duruyor — ağır alerjisi olan müşterinin ihtiyacı zaten
- * bir kod listesi değil, arayabileceği bir numara.
- *
- * Ürün bazında tam liste `/allergene` sayfasında; oradaki tablo bilgisi
- * girilmemiş satırları gizlemez, çünkü orası bilginin kendisinin sayfası.
- */
-function AllergenNotice({ lang }: { lang: Language }) {
-  return (
-    <p className="mt-6 border-l-2 border-line pl-4 text-xs leading-relaxed text-smoke/80">
-      {lang === "tr" ? (
-        <>
-          Alerjen ve katkı maddesi bilgisi için lütfen bizi arayın:{" "}
-          <a href={BUSINESS_INFO.phoneTel} className="text-amber hover:text-flame">
-            {BUSINESS_INFO.formattedPhone}
-          </a>{" "}
-          ·{" "}
-          <Link href="/allergene" className="text-amber underline hover:text-flame">
-            Ürün bazında liste
-          </Link>
-        </>
-      ) : (
-        <>
-          Angaben zu Allergenen und Zusatzstoffen erhalten Sie telefonisch:{" "}
-          <a href={BUSINESS_INFO.phoneTel} className="text-amber hover:text-flame">
-            {BUSINESS_INFO.formattedPhone}
-          </a>{" "}
-          ·{" "}
-          <Link href="/allergene" className="text-amber underline hover:text-flame">
-            Liste je Produkt
-          </Link>
-        </>
-      )}
-    </p>
-  );
-}
-
-/**
- * Kod açıklamaları.
- *
- * Kodun tek başına bir hükmü yoktur: LMIV Art. 21 Abs. 1 lit. b uyarınca
- * dipnot kullanılabilmesi, açıklamanın **aynı sayfada** bulunmasına bağlıdır.
- * Bu yüzden liste kartanın altında, ayrı bir sayfaya bağlantı olarak değil,
- * doğrudan metin olarak durur.
- */
-export function AllergenLegend({ lang }: { lang: Language }) {
-  const allergens = allergenLegend(lang);
-  const additives = additiveLegend(lang);
-
-  return (
-    <section
-      id="allergene"
-      aria-labelledby="allergene-title"
-      className="mx-auto mt-20 w-full max-w-5xl border-t border-line px-5 pt-10"
-    >
-      <h2 id="allergene-title" className="font-display text-lg font-bold text-amber">
-        {lang === "tr"
-          ? "Alerjen ve katkı maddesi bildirimi"
-          : "Allergene und Zusatzstoffe"}
-      </h2>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-smoke">
-        {lang === "tr"
-          ? "Ürünlerin yanındaki harfler LMIV (AB 1169/2011) Ek II uyarınca bildirimi zorunlu 14 alerjeni, rakamlar ZZulV uyarınca bildirimi zorunlu katkı maddesi sınıflarını gösterir."
-          : "Die Buchstaben neben den Speisen bezeichnen die 14 kennzeichnungspflichtigen Allergene nach Anhang II der LMIV (VO (EU) Nr. 1169/2011), die Ziffern die kennzeichnungspflichtigen Zusatzstoffe nach ZZulV."}
-      </p>
-
-      <div className="mt-6 grid gap-8 md:grid-cols-2">
-        <div>
-          <p className="tag text-smoke">
-            {lang === "tr" ? "Alerjenler" : "Allergene"}
-          </p>
-          <dl className="mt-3 space-y-1.5">
-            {allergens.map((entry) => (
-              <div key={entry.code} className="flex gap-3 text-sm">
-                <dt className="w-6 shrink-0 font-mono text-amber">{entry.code}</dt>
-                <dd className="text-smoke">{entry.label}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-
-        <div>
-          <p className="tag text-smoke">
-            {lang === "tr" ? "Katkı maddeleri" : "Zusatzstoffe"}
-          </p>
-          <dl className="mt-3 space-y-1.5">
-            {additives.map((entry) => (
-              <div key={entry.code} className="flex gap-3 text-sm">
-                <dt className="w-6 shrink-0 font-mono text-amber">{entry.code}</dt>
-                <dd className="text-smoke">{entry.label}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </div>
-
-      <p className="mt-8 border-l-2 border-amber bg-void px-4 py-3 text-sm leading-relaxed text-bone">
-        {lang === "tr"
-          ? "Mutfağımızda birçok malzeme birlikte işlendiği için, özenli çalışmaya rağmen diğer alerjenlerin eser miktarda bulunması tamamen dışlanamaz. Ağır alerjiniz varsa lütfen sipariş vermeden önce bizi arayın."
-          : "In unserer Küche werden viele Zutaten gemeinsam verarbeitet; Spuren weiterer allergener Stoffe lassen sich trotz sorgfältiger Arbeit nicht vollständig ausschließen. Bei schweren Allergien rufen Sie uns bitte vor der Bestellung an."}
-      </p>
-
-      <p className="mt-4 text-sm">
-        <Link href="/allergene" className="text-amber underline hover:text-flame transition-colors">
-          {lang === "tr"
-            ? "Ürün bazında tam liste"
-            : "Vollständige Liste je Produkt"}
-        </Link>
-      </p>
-    </section>
   );
 }

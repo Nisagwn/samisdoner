@@ -165,7 +165,7 @@ function killOrphanedProjectProcesses() {
     if (!row || !row.CommandLine || row.ProcessId === process.pid) continue;
     const commandLine = normalizePath(String(row.CommandLine));
     if (!commandLine.includes(ROOT_KEY)) continue;
-    if (!/next\/dist|\.next\/transform/.test(commandLine)) continue;
+    if (!/next\/dist|\.next(-dev)?\/transform/.test(commandLine)) continue;
     console.log(`• Yetim Next süreci kapatılıyor (pid ${row.ProcessId}).`);
     killTree(row.ProcessId);
   }

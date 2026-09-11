@@ -135,8 +135,9 @@ export async function createOrder(data: CreateOrderData) {
         expiresAt: data.expiresAt,
         lines: {
           create: data.lines.map((line) => ({
-            productId: line.input.kind === "product" ? line.input.productId : null,
-            kind: line.input.kind === "builder" ? "BUILDER" : "PRODUCT",
+            productId: line.input.productId,
+            /* Tek satır türü kaldı; `BUILDER` yalnızca eski kayıtlarda geçer. */
+            kind: "PRODUCT",
             label: line.label,
             detail: line.detail,
             unitCents: line.unitCents,

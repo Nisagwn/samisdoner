@@ -4,15 +4,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
-  ADDITIVES,
-  ADDITIVE_LABELS,
-  ALLERGENS,
-  ALLERGEN_LABELS,
   VAT_RATES,
   formatPrice,
-  hasLegalInfo,
-  type Additive,
-  type Allergen,
   type Category,
   type Product,
   type Variant,
@@ -21,7 +14,6 @@ import { useScrollLock } from "@/lib/useScrollLock";
 import {
   Badge,
   Button,
-  CheckGrid,
   ConfirmDialog,
   Field,
   Notice,
@@ -48,24 +40,10 @@ type Draft = {
   sortOrder: string;
   variants: { size: string; price: string }[];
 
-  /* --- yasal bilgi (LMIV / ZZulV / UStG / BGB) --- */
+  /* --- yasal bilgi (UStG / BGB) --- */
   vatRate: number;
-  allergens: Allergen[];
-  additives: Additive[];
-  allergenInfoConfirmed: boolean;
   isPerishable: boolean;
 };
-
-/** Izgaralar sabit listelerden kurulur; panel Türkçe olduğu için TR etiket. */
-const ALLERGEN_OPTIONS = ALLERGENS.map((code) => ({
-  code,
-  label: `${ALLERGEN_LABELS[code].tr} · ${ALLERGEN_LABELS[code].de}`,
-}));
-
-const ADDITIVE_OPTIONS = ADDITIVES.map((code) => ({
-  code,
-  label: `${ADDITIVE_LABELS[code].tr} · ${ADDITIVE_LABELS[code].de}`,
-}));
 
 /** Müşteri tarafındaki `isVisible` kuralının arayüzdeki karşılığı. */
 function visibleOnSite(p: Product): boolean {
@@ -93,9 +71,6 @@ function emptyDraft(categoryId: string): Draft {
        İçecek eklerken ikisi de değiştirilmeli — bu yüzden formda ikisi de
        görünür alan, gizli varsayılan değil. */
     vatRate: 7,
-    allergens: [],
-    additives: [],
-    allergenInfoConfirmed: false,
     isPerishable: true,
   };
 }
@@ -122,9 +97,6 @@ function toDraft(product: Product): Draft {
       price: String(v.price).replace(".", ","),
     })),
     vatRate: product.vatRate,
-    allergens: product.allergens,
-    additives: product.additives,
-    allergenInfoConfirmed: product.allergenInfoConfirmed,
     isPerishable: product.isPerishable,
   };
 }
@@ -153,9 +125,6 @@ function toPayload(draft: Draft) {
     ...(draft.sortOrder.trim() === "" ? {} : { sortOrder: Number(draft.sortOrder.trim()) }),
     variants,
     vatRate: draft.vatRate,
-    allergens: draft.allergens,
-    additives: draft.additives,
-    allergenInfoConfirmed: draft.allergenInfoConfirmed,
     isPerishable: draft.isPerishable,
   };
 }
@@ -252,12 +221,9 @@ export default function ProductManager({
   const noCategories = categories.length === 0;
 
   return (
-    <div className="max-w-[1200px] min-w-0">
-      <header className="flex flex-wrap items-end justify-between gap-5 mb-8">
-        <div>
-          <p className="tag text-flame mb-2">Katalog</p>
-          <h1 className="font-display font-extrabold text-3xl md:text-4xl text-bone">Ürünler</h1>
-        </div>
+    <div className="min-w-0">
+      {/* Başlık kabuğa ait (`MenuManager`); burada yalnızca ekleme düğmesi var. */}
+      <div className="mb-6 flex flex-wrap items-center justify-end gap-4">
         <Button
           onClick={() => {
             setEditing(null);
@@ -268,7 +234,7 @@ export default function ProductManager({
         >
           + YENİ ÜRÜN
         </Button>
-      </header>
+      </div>
 
       {noCategories && (
         <div className="mb-6">
@@ -727,11 +693,10 @@ function ProductForm({
           <div className="border-t border-line pt-6">
             <h3 className="font-display text-sm font-bold text-bone">Yasal bilgi</h3>
             <p className="mt-1.5 mb-4 max-w-[70ch] text-xs leading-relaxed text-smoke">
-              Bu alanlar menüde ve fişte doğrudan görünür. Alerjen bildirimi
-              (LMIV Ek II) sipariş <strong className="text-bone">bağlayıcı hale
-              gelmeden önce</strong> verilmek zorundadır; katkı maddesi bildirimi
-              (ZZulV) yazılı olmak zorundadır — &quot;personele sorunuz&quot; katkı
-              maddelerinde geçerli bir bildirim değildir.
+              İki alan: KDV oranı fişte ve KDV dökümünde görünür, cayma hakkı
+              işareti ise siparişin iptal edilebilirliğini belirler. Alerjen
+              bildirimi artık ürün başına girilmiyor — kartanın ve sipariş
+              sayfasının altında tek bir uyarı olarak duruyor.
             </p>
 
             <div className="space-y-4">
@@ -752,52 +717,12 @@ function ProductForm({
                 </Select>
               </Field>
 
-              <CheckGrid
-                legend="Alerjenler (LMIV Ek II)"
-                hint="Üründe bulunan maddeleri işaretleyin. Hiçbiri yoksa aşağıdaki beyanı açın — boş liste tek başına 'madde yok' anlamına gelmez."
-                options={ALLERGEN_OPTIONS}
-                selected={draft.allergens}
-                onChange={(next) => set("allergens", next)}
+              <Toggle
+                checked={draft.isPerishable}
+                onChange={(v) => set("isPerishable", v)}
+                onLabel="ÇABUK BOZULAN — CAYMA HAKKI İSTİSNASI"
+                offLabel="ÇABUK BOZULMAZ — CAYMA HAKKI VAR"
               />
-
-              <CheckGrid
-                legend="Katkı maddeleri (ZZulV)"
-                hint="İşlevsel sınıf yeterlidir, tek tek E-numarası gerekmez."
-                options={ADDITIVE_OPTIONS}
-                selected={draft.additives}
-                onChange={(next) => set("additives", next)}
-              />
-
-              <div className="flex flex-wrap gap-3">
-                {/*
-                  Bu anahtar "boş liste" ile "madde yok"u ayırır ve bilinçli bir
-                  beyandır: kapalıyken ürün menüde "lütfen sorunuz" uyarısıyla
-                  çıkar, açıkken "bildirimi zorunlu madde içermez" der. İkisini
-                  karıştırmak alerjik müşteride doğrudan sağlık riski.
-                */}
-                <Toggle
-                  checked={draft.allergenInfoConfirmed}
-                  onChange={(v) => set("allergenInfoConfirmed", v)}
-                  onLabel="BEYAN EDİLDİ — BİLDİRİMİ ZORUNLU MADDE YOK"
-                  offLabel="BEYAN EDİLMEDİ — BİLGİ EKSİK"
-                />
-                <Toggle
-                  checked={draft.isPerishable}
-                  onChange={(v) => set("isPerishable", v)}
-                  onLabel="ÇABUK BOZULAN — CAYMA HAKKI İSTİSNASI"
-                  offLabel="ÇABUK BOZULMAZ — CAYMA HAKKI VAR"
-                />
-              </div>
-
-              {!hasLegalInfo({
-                allergens: draft.allergens,
-                allergenInfoConfirmed: draft.allergenInfoConfirmed,
-              }) && (
-                <Notice
-                  kind="error"
-                  message="Bu üründe alerjen bilgisi eksik: ya en az bir madde işaretleyin ya da 'bildirimi zorunlu madde yok' beyanını açın. Eksik bırakılırsa ürün menüde uyarıyla görünür."
-                />
-              )}
 
               <p className="border border-line bg-void px-4 py-3 text-xs leading-relaxed text-smoke/70">
                 <span className="text-amber">Çabuk bozulan</span> işareti cayma

@@ -28,14 +28,20 @@ const ORDER_POLL_MS = 15_000;
 /**
  * Menü iki öbekte.
  *
- * Sekiz satır eşit ağırlıkta dizildiğinde her açılışta baştan okunuyordu; oysa
- * bunların üçü **her gün**, beşi ayda bir açılır. Ayrım o: üstte vardiyanın
- * kendisi, altta kurulum. Bir başlık ve bir çizgi, sekiz seçeneği "üç şey artı
- * ayarlar"a indiriyor.
+ * Dokuz satır eşit ağırlıkta dizildiğinde her açılışta baştan okunuyordu; oysa
+ * bunların üçü **her gün**, kalanı ayda bir açılır. Ayrım o: üstte vardiyanın
+ * kendisi, altta kurulum.
+ *
+ * Kurulum tarafı altı satırdan üçe indi ve her satırın altına ne yaptığı
+ * yazıldı. İkisi bir arada bir şikâyeti çözüyor: "Ürünler" ile "Kategoriler"
+ * yan yana iki eşit satırken kategorinin buradan düzenlenebildiği
+ * anlaşılmıyordu, "Fiyat ayarları" ile "Teslimat bölgeleri" ise ikisi de ücret
+ * tuttuğu için hangisinin arandığı belirsizdi. Şimdi menü satırının kendisi
+ * "burada ne var" sorusunu cevaplıyor; başlık tek başına cevaplamıyordu.
  */
 const NAV_GROUPS: {
   label: string | null;
-  items: { href: string; label: string; exact: boolean; pulse?: boolean }[];
+  items: { href: string; label: string; hint?: string; exact: boolean; pulse?: boolean }[];
 }[] = [
   {
     label: null,
@@ -46,14 +52,26 @@ const NAV_GROUPS: {
     ],
   },
   {
-    label: "Ayarlar",
+    label: "Kurulum",
     items: [
-      { href: "/admin/products", label: "Ürünler", exact: false },
-      { href: "/admin/allergene", label: "Alerjen bilgisi", exact: false },
-      { href: "/admin/categories", label: "Kategoriler", exact: false },
-      { href: "/admin/pricing", label: "Fiyat ayarları", exact: false },
-      { href: "/admin/zones", label: "Teslimat bölgeleri", exact: false },
-      { href: "/admin/betrieb", label: "İşletme", exact: false },
+      {
+        href: "/admin/menu",
+        label: "Menü",
+        hint: "Ürünler, kategoriler, fiyatlar",
+        exact: false,
+      },
+      {
+        href: "/admin/zones",
+        label: "Teslimat ve ücretler",
+        hint: "Posta kodu, servis ücreti",
+        exact: false,
+      },
+      {
+        href: "/admin/betrieb",
+        label: "İşletme",
+        hint: "Çalışma saati, sipariş anahtarı",
+        exact: false,
+      },
     ],
   },
 ];
@@ -138,13 +156,20 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
                 href={item.href}
                 onClick={() => setNavOpen(false)}
                 aria-current={active ? "page" : undefined}
-                className={`focus-ring tag flex items-center gap-3 px-4 py-3 border-l-2 transition-colors ${
+                className={`focus-ring flex items-center gap-3 border-l-2 px-4 py-3 transition-colors ${
                   active
-                    ? "border-amber text-amber bg-amber/10"
-                    : "border-transparent text-smoke hover:text-bone hover:bg-panel"
+                    ? "border-amber bg-amber/10 text-amber"
+                    : "border-transparent text-smoke hover:bg-panel hover:text-bone"
                 }`}
               >
-                <span className="min-w-0 flex-1">{item.label}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="tag block">{item.label}</span>
+                  {item.hint && (
+                    <span className="mt-1 block text-[11px] leading-snug text-smoke/60">
+                      {item.hint}
+                    </span>
+                  )}
+                </span>
                 {badge && badge.active > 0 && <OrderBadge pulse={badge} />}
               </Link>
             );

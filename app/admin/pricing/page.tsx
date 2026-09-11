@@ -1,20 +1,13 @@
-import PricingManager from "@/components/admin/PricingManager";
-import { getCatalog } from "@/lib/admin/store";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function AdminPricingPage() {
-  const catalog = await getCatalog();
-  const products = catalog.products
-    .slice()
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((p) => ({ id: p.id, name: p.name, price: p.discountPrice ?? p.price }));
-
-  return (
-    <PricingManager
-      initialSettings={catalog.settings}
-      initialBuilder={catalog.builder}
-      products={products}
-    />
-  );
+/**
+ * Eski fiyat ayarları adresi.
+ *
+ * Sayfada iki blok vardı: servis ücreti ve kaldırılan "Kendin Seç"
+ * yapılandırıcısının ek ücretleri. İkincisi gidince tek başına bir sayfayı
+ * hak etmeyen iki alan kaldı; ikisi de teslimat ekranına taşındı — ücretlerin
+ * tamamı artık tek yerde.
+ */
+export default function AdminPricingRedirect() {
+  redirect("/admin/zones");
 }

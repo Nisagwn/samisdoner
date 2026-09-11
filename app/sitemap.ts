@@ -31,7 +31,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     entry("/", 1, "weekly"),
     entry("/speisekarte", 0.9, "daily"),
     entry("/ueber-uns", 0.6, "monthly"),
-    entry("/allergene", 0.5, "monthly"),
     entry("/impressum", 0.3, "yearly"),
     entry("/datenschutz", 0.3, "yearly"),
     entry("/agb", 0.3, "yearly"),

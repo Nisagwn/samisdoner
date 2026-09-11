@@ -9,9 +9,10 @@
  * Çalıştırma:  npm run db:seed
  */
 
-import { PrismaClient, BuilderMode } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import catalog from "../data/store/catalog.json";
 import { BUSINESS_INFO } from "../data/businessInfo";
+import { DELIVERY_AREAS } from "../data/deliveryAreas";
 import { toCents } from "../lib/money";
 
 const prisma = new PrismaClient();
@@ -89,15 +90,14 @@ async function seedCatalog() {
 
     await prisma.product.upsert({
       where: { id: product.id },
-      // Alerjen/katkı bilgisi ve KDV oranı yalnızca **oluştururken** yazılır:
-      // panelden düzeltilmiş bir oran ya da girilmiş alerjen listesi, tohumlama
-      // yeniden çalıştığında geri alınmamalı.
+      // KDV oranı ve cayma hakkı istisnası yalnızca **oluştururken** yazılır:
+      // panelden düzeltilmiş bir oran, tohumlama yeniden çalıştığında geri
+      // alınmamalı.
       create: {
         id: product.id,
         ...base,
         vatRate: vatRateFor(product.categoryId),
         isPerishable: isPerishable(product.categoryId),
-        allergenInfoConfirmed: false,
       },
       update: base,
     });
@@ -119,40 +119,6 @@ async function seedCatalog() {
   console.log(`  ürün: ${catalog.products.length}`);
 }
 
-async function seedBuilder() {
-  for (const [index, group] of catalog.builder.groups.entries()) {
-    await prisma.builderGroup.upsert({
-      where: { id: group.id },
-      create: {
-        id: group.id,
-        mode: group.mode as BuilderMode,
-        sortOrder: index,
-      },
-      update: { mode: group.mode as BuilderMode, sortOrder: index },
-    });
-
-    for (const [oi, option] of group.options.entries()) {
-      const data = {
-        groupId: group.id,
-        label: option.label,
-        labelDe: option.labelDe ?? "",
-        desc: option.desc ?? "",
-        descDe: option.descDe ?? "",
-        priceCents: toCents(option.price),
-        kcal: option.kcal ?? 0,
-        image: option.image ?? null,
-        sortOrder: oi,
-      };
-      await prisma.builderOption.upsert({
-        where: { id: option.id },
-        create: { id: option.id, ...data },
-        update: data,
-      });
-    }
-  }
-  console.log(`  yapılandırıcı grubu: ${catalog.builder.groups.length}`);
-}
-
 async function seedSettings() {
   // Tekil kayıt. Var olan ayarlar korunur — yalnızca yoksa oluşturulur.
   await prisma.settings.upsert({
@@ -161,8 +127,6 @@ async function seedSettings() {
       id: 1,
       serviceFeeCents: toCents(catalog.settings.serviceFee),
       freeServiceOverCents: toCents(catalog.settings.freeServiceOver),
-      builderBaseProductId: catalog.builder.baseProductId,
-      builderFallbackPriceCents: toCents(catalog.builder.fallbackBasePrice),
     },
     update: {},
   });
@@ -184,40 +148,42 @@ async function seedOpeningHours() {
   console.log(`  çalışma saatleri: ${rows.length} gün`);
 }
 
-type NearbyZone = {
-  postalCode: string;
-  city: string;
-  minOrderCents: number;
-  feeCents: number;
-  freeOverCents: number;
-  etaMinutes: number;
-};
-
 /**
- * Straßkirchen çevresindeki posta kodları — panelde hazır beklesin diye.
+ * Uzaklık kademeleri.
  *
- * Mesafe arttıkça minimum sepet ve ücret de artar; uzak bir adrese 15 €'luk
- * sepet için araç çıkarmak zarardır. Buradaki kademeler bir **başlangıç
- * önerisidir**, işletmenin aracına ve mutfağına göre panelden düzeltilir.
+ * Uzak bir adrese 15 €'luk sepet için araç çıkarmak zarardır: yol parası da,
+ * mutfağın o yarım saati de sabittir. Bu yüzden minimum sepet ve ücret
+ * uzaklıkla birlikte artar, tahmini süre de öyle.
  *
- * 94342 bu listede yok: o işletmenin kendi posta kodu (Straßkirchen ve
- * Irlbach'ı birlikte kapsar) ve aşağıda ayrıca tohumlanır.
+ * Kademeler bir **başlangıç önerisidir**, işletmenin aracına ve mutfağına göre
+ * panelden satır satır düzeltilir. Uzaklık kuş uçuşudur (bkz.
+ * `scripts/scrape-delivery-areas.ts`); gerçek yol her zaman daha uzun olduğu
+ * için süreler cömert tutulmuştur.
  */
-const NEARBY_ZONES: NearbyZone[] = [
-  // Yakın kuşak, ~5–10 km.
-  { postalCode: "94363", city: "Oberschneiding", minOrderCents: 1500, feeCents: 250, freeOverCents: 3000, etaMinutes: 50 },
-  { postalCode: "94330", city: "Aiterhofen", minOrderCents: 1500, feeCents: 250, freeOverCents: 3000, etaMinutes: 50 },
-  { postalCode: "94554", city: "Moos", minOrderCents: 1500, feeCents: 250, freeOverCents: 3000, etaMinutes: 50 },
-  // Orta kuşak, ~10–15 km.
-  { postalCode: "94315", city: "Straubing", minOrderCents: 2000, feeCents: 350, freeOverCents: 4000, etaMinutes: 60 },
-  { postalCode: "94327", city: "Bogen", minOrderCents: 2000, feeCents: 350, freeOverCents: 4000, etaMinutes: 60 },
-  { postalCode: "94339", city: "Leiblfing", minOrderCents: 2000, feeCents: 350, freeOverCents: 4000, etaMinutes: 60 },
-  { postalCode: "94447", city: "Plattling", minOrderCents: 2000, feeCents: 350, freeOverCents: 4000, etaMinutes: 60 },
-  { postalCode: "94559", city: "Niederwinkling", minOrderCents: 2000, feeCents: 350, freeOverCents: 4000, etaMinutes: 60 },
+const DISTANCE_TIERS = [
+  { maxKm: 5, minOrderCents: 1500, feeCents: 200, freeOverCents: 3000, etaMinutes: 45 },
+  { maxKm: 10, minOrderCents: 1500, feeCents: 250, freeOverCents: 3000, etaMinutes: 55 },
+  { maxKm: 16, minOrderCents: 2000, feeCents: 350, freeOverCents: 4000, etaMinutes: 65 },
+  { maxKm: Infinity, minOrderCents: 2500, feeCents: 450, freeOverCents: 5000, etaMinutes: 80 },
 ];
+
+function tierFor(km: number) {
+  const { maxKm: _ignored, ...tier } = DISTANCE_TIERS.find((entry) => km <= entry.maxKm)!;
+  return tier;
+}
 
 /**
  * Teslimat bölgeleri.
+ *
+ * Satırlar `data/deliveryAreas.ts` listesinden gelir — elle yazılmaz, iki resmî
+ * kaynaktan üretilir (bkz. `scripts/scrape-delivery-areas.ts`). Elle yazılmış
+ * bir listede ya bir köy unutulur ya bir posta kodu yanlış yazılır; ikisi de
+ * müşteriye "buraya teslimat yapmıyoruz" diye görünür.
+ *
+ * **Bölge birimi posta kodudur, belediye değil**: 94342 hem Straßkirchen'i hem
+ * Irlbach'ı kapsar ve kuryenin tarifesi ikisi için aynıdır. Müşteriye
+ * gösterilen belediye listesi bu tek satırdan türetilir
+ * (`app/api/menu/delivery`).
  *
  * İşletmenin kendi posta kodu **açık** tohumlanır; komşu posta kodları satır
  * olarak eklenir ama **kapalı** gelir. Sebebi: siparişi kabul etmek bir
@@ -229,35 +195,50 @@ const NEARBY_ZONES: NearbyZone[] = [
  * bir bölge kapalı, açtığı açık kalır.
  */
 async function seedDeliveryZone() {
-  const { postalCode, city } = BUSINESS_INFO.address;
-  await prisma.deliveryZone.upsert({
-    where: { postalCode },
-    create: {
-      postalCode,
-      city,
-      minOrderCents: 1500,
-      feeCents: 200,
-      freeOverCents: 3000,
-      etaMinutes: 45,
-    },
-    update: {},
-  });
-  console.log(`  teslimat bölgesi: ${postalCode} ${city} (açık)`);
+  const home = BUSINESS_INFO.address.postalCode;
 
-  for (const zone of NEARBY_ZONES) {
+  /*
+   * Posta kodu başına tek satır: liste belediye başına bir kayıt taşır, tabloda
+   * `postalCode` tekildir. Aynı kodu paylaşan belediyeler panelde okunabilsin
+   * diye adları birleştirilir; müşteriye gösterilen ad bu alandan değil,
+   * listenin kendisinden gelir.
+   */
+  const byPostalCode = new Map<string, { cities: string[]; distanceKm: number }>();
+  for (const area of DELIVERY_AREAS) {
+    const entry = byPostalCode.get(area.postalCode);
+    if (entry) entry.cities.push(area.city);
+    else byPostalCode.set(area.postalCode, { cities: [area.city], distanceKm: area.distanceKm });
+  }
+
+  // İşletmenin kendi kodu listede yoksa (yarıçap değiştiyse) yine de açılır.
+  if (!byPostalCode.has(home)) {
+    byPostalCode.set(home, { cities: [BUSINESS_INFO.address.city], distanceKm: 0 });
+  }
+
+  let opened = 0;
+  for (const [postalCode, { cities, distanceKm }] of byPostalCode) {
     await prisma.deliveryZone.upsert({
-      where: { postalCode: zone.postalCode },
-      create: { ...zone, active: false },
+      where: { postalCode },
+      create: {
+        postalCode,
+        city: cities.join(" / "),
+        ...tierFor(distanceKm),
+        active: postalCode === home,
+      },
       update: {},
     });
+    if (postalCode === home) opened++;
   }
-  console.log(`  komşu bölge: ${NEARBY_ZONES.length} posta kodu (kapalı — panelden açılır)`);
+
+  console.log(`  teslimat bölgesi: ${home} ${BUSINESS_INFO.address.city} (açık)`);
+  console.log(
+    `  komşu bölge: ${byPostalCode.size - opened} posta kodu (kapalı — panelden açılır)`
+  );
 }
 
 async function main() {
   console.log("Katalog göçü başlıyor…");
   await seedCatalog();
-  await seedBuilder();
   await seedSettings();
   await seedOpeningHours();
   await seedDeliveryZone();

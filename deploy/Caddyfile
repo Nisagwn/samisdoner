@@ -1,0 +1,44 @@
+# Ters vekil ve TLS.
+#
+# Caddy sertifikayı Let's Encrypt'ten kendisi alır ve yeniler; ayrıca HTTP'yi
+# HTTPS'e kendiliğinden yönlendirir. Yapılandırma bu kadar kısa olduğu için
+# Nginx yerine bu seçildi: elle sertifika yenileme, cron ve certbot yok.
+
+{
+	email {$LETSENCRYPT_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Next'in parmak izli varlıkları (/_next/static/...) içerik değişince yeni
+	# ada kavuşur; bu yüzden bir yıl önbelleklenebilirler. Bu başlık olmadan
+	# tarayıcı her ziyarette JS ve CSS'i yeniden indirir.
+	@immutable path /_next/static/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+	# Görseller /public altından gelir ve adları sabittir; bir yıl fazla olur,
+	# bir gün az. Bir hafta, döner fotoğrafı değiştirmek isteyene makul bir
+	# gecikme bırakır.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=604800"
+
+	# Güvenlik başlıkları. HSTS bilinçli olarak burada değil: bir kez
+	# gönderildiğinde tarayıcı alan adını aylarca yalnızca HTTPS üzerinden
+	# ister; alan adı yapılandırması oturmadan açılırsa geri dönüşü zordur.
+	# Canlıya çıkış oturduktan sonra aşağıdaki satır açılmalı:
+	#   Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Sunucunun ne olduğunu söylemenin kimseye faydası yok.
+		-Server
+	}
+
+	reverse_proxy app:3000 {
+		# Uygulama gerçek istemci adresini görsün: hız sınırlama ve günlükler
+		# aksi hâlde herkesi tek bir Docker ağ adresi sanır.
+		header_up X-Real-IP {remote_host}
+	}
+}

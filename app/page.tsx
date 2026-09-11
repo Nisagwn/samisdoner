@@ -2,7 +2,6 @@ import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Products from "@/components/Products";
 import AssemblyLog from "@/components/AssemblyLog";
-import OrderBuilder from "@/components/OrderBuilder";
 import Locations from "@/components/Locations";
 import Footer from "@/components/Footer";
 import { getFeaturedProducts } from "@/lib/admin/store";
@@ -10,14 +9,17 @@ import { getFeaturedProducts } from "@/lib/admin/store";
 /**
  * Ana sayfa.
  *
- * Beş bölüm: tanıtım, öne çıkanlar, katman katman, kendi dönerini kur, konum.
- * Eskiden burada on bir bölüm vardı ve menüye giden yol bu yığının içinde
- * kayboluyordu.
+ * Dört bölüm: tanıtım, öne çıkanlar, katman katman, konum. Eskiden burada on
+ * bir bölüm vardı ve menüye giden yol bu yığının içinde kayboluyordu.
  *
- * "Katman katman" (`AssemblyLog`) buraya geri alındı: sayfanın imzası olan
- * katmanlı döner sahnesi vitrinle sipariş kurucusunun arasında durur —
- * malzemeleri gösterip hemen ardından "kendin seç" adımına bırakır. Yalnızca
+ * "Katman katman" (`AssemblyLog`) sayfanın imzası olan katmanlı döner
+ * sahnesidir; vitrinin hemen altında durur ve malzemeleri gösterir. Yalnızca
  * bu sayfada yaşar, `/ueber-uns` artık onu tekrar etmez.
+ *
+ * "Kendin Seç" yapılandırıcısı **kaldırıldı**. Müşteri dönerini malzeme
+ * malzeme kurmak yerine menüden sipariş ediyor, özel istek sipariş notuna
+ * yazılıyor. Bölümün kendine ait bir sepet satır türü, bir API ucu ve panelde
+ * seçenek başına ek ücret tablosu vardı; üçü de gitti.
  *
  * Kalan hikâye, kalite, yorumlar ve duyuru bölümleri **silinmedi**,
  * `/ueber-uns` sayfasına taşındı; navigasyondan ve altbilgiden erişilebilir.
@@ -41,7 +43,6 @@ export default async function Home() {
       <Hero />
       <Products products={featured} />
       <AssemblyLog />
-      <OrderBuilder />
       <Locations />
       <Footer />
     </main>
