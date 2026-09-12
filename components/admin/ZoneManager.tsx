@@ -4,7 +4,12 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { formatCents } from "@/lib/money";
 import { citiesForPostalCode } from "@/data/deliveryAreas";
-import { knownCityNames, postalCodeCandidates } from "@/lib/orders/deliveryCities";
+import {
+  foldForSearch,
+  knownCityNames,
+  matchesZoneSearch,
+  postalCodeCandidates,
+} from "@/lib/orders/deliveryCities";
 import type { DeliveryZoneRecord } from "@/lib/orders/zones";
 import { Badge, Button, ConfirmDialog, Field, Notice, Select, TextInput, Toggle } from "./ui";
 
@@ -21,6 +26,12 @@ import { Badge, Button, ConfirmDialog, Field, Notice, Select, TextInput, Toggle 
  * ne de yeni bölge eklemeyi — yedi alanlık form her zaman tepede duruyor,
  * aradığın şehir onun altında kayboluyordu. Şimdi her şey tek tıkla açılıyor,
  * kapalıyken yalnızca şehir adı ve kaç kodunun açık olduğu görünüyor.
+ *
+ * Kapalı gruplar aranan şehri bulmayı kolaylaştırır ama bulunacak şeyin adını
+ * bilmeyi şart koşar: elli küsur kod arasında "94333 hangi şehirdeydi" diye
+ * bakan kişi grupları tek tek açmak zorunda kalıyordu. Listenin üstündeki
+ * arama kutusu hem posta kodunda hem belediye adında arar ve eşleşen grupları
+ * kendiliğinden açar — arayıp bulduğun şeye bir de tıklamak gerekmesin.
  *
  * Posta kodu ve şehir **yazılmaz, seçilir**: ikisi de resmî dizinden
  * (`data/deliveryAreas.ts`) gelir. Elle yazarken bir haneyi kaydırmanın cezası
@@ -73,6 +84,23 @@ function toForm(zone: DeliveryZoneRecord): Form {
     etaMinutes: String(zone.etaMinutes),
     active: zone.active,
   };
+}
+
+/**
+ * Şehir başlığının sağındaki özet.
+ *
+ * Burada önce "0 / 1 açık" yazıyordu: iki sayı, bir bölü işareti ve tek
+ * kelimelik bir sıfat. Hangi sayının ne olduğunu, neyin açık olduğunu ve
+ * "açık"ın teslimat mı yoksa grubun kendisi mi olduğunu okuyanın çıkarması
+ * gerekiyordu — aynı satırda grubu açıp kapatan bir düğme dururken. Ekran
+ * ayda bir açılıyor; her açılışta yeniden çözülen bir kısaltma, kazandırdığı
+ * yerden çok daha fazlasını götürür. Artık ne sorulduysa o yazıyor.
+ */
+function citySummary(total: number, active: number): string {
+  if (total === 1) return active === 1 ? "Teslimat var" : "Teslimat yok";
+  if (active === 0) return `${total} posta kodunun hiçbirine teslimat yok`;
+  if (active === total) return `${total} posta kodunun tamamına teslimat var`;
+  return `${total} posta kodundan ${active} tanesine teslimat var`;
 }
 
 /** Açılır listede "bu seçenek listede yok" anlamına gelen değer. */
@@ -192,6 +220,34 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
       .map(([city, list]) => ({ city, zones: list }))
       .sort((a, b) => a.city.localeCompare(b.city, "de"));
   }, [zones]);
+
+  /**
+   * Arama kutusundaki metin, karşılaştırmaya hazır hâlde.
+   *
+   * Sadeleştirme her tuş vuruşunda bir kez yapılır; satır başına yapılsaydı
+   * "strassk" yazan kişi her harfte elli küsur satırı yeniden çözümletirdi.
+   */
+  const [search, setSearch] = useState("");
+  const needle = foldForSearch(search);
+
+  /**
+   * Ekranda görünen gruplar.
+   *
+   * Eşleşmeyen satırlar grubun içinden düşer, boşalan grup listeden düşer:
+   * altında hiçbir şey olmayan bir şehir başlığı, tıklayınca boş açılan bir
+   * söz olurdu.
+   */
+  const visible = useMemo(() => {
+    if (needle === "") return grouped;
+    return grouped
+      .map((group) => ({
+        city: group.city,
+        zones: group.zones.filter((zone) => matchesZoneSearch(zone, needle)),
+      }))
+      .filter((group) => group.zones.length > 0);
+  }, [grouped, needle]);
+
+  const visibleCount = visible.reduce((total, group) => total + group.zones.length, 0);
 
   /**
    * Açık bölge yoksa teslimat fiilen kapalıdır: `deliveryEnabled` açık olsa
@@ -365,12 +421,15 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
           />
         </Field>
 
-        <Field label="Durum" hint="Kapalı bölgeye sipariş verilemez; ayarlar korunur.">
+        <Field
+          label="Bu posta koduna teslimat"
+          hint="Kapalıyken bu koddaki adresler sipariş veremez; yukarıdaki ayarlar silinmez, beklemeye alınır."
+        >
           <Toggle
             checked={form.active}
             onChange={(next) => set({ ...form, active: next })}
-            onLabel="AÇIK — TESLİMAT VAR"
-            offLabel="KAPALI — TESLİMAT YOK"
+            onLabel="TESLİMAT VAR — KAPATMAK İÇİN TIKLA"
+            offLabel="TESLİMAT YOK — AÇMAK İÇİN TIKLA"
           />
         </Field>
       </div>
@@ -447,16 +506,50 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
         </div>
       )}
 
+      {zones.length > 0 && (
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <TextInput
+            type="search"
+            value={search}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSearch(next);
+              const folded = foldForSearch(next);
+              // Kutu boşaltıldığında gruplar kullanıcının bıraktığı gibi
+              // kalsın: aramadan çıkmak "her şeyi aç" demek değil.
+              if (folded === "") return;
+              setOpenCities(
+                new Set(
+                  grouped
+                    .filter((group) => group.zones.some((zone) => matchesZoneSearch(zone, folded)))
+                    .map((group) => group.city)
+                )
+              );
+            }}
+            placeholder="Posta kodu ya da şehir adı yazın…"
+            aria-label="Teslimat bölgesi ara"
+            className="sm:max-w-[320px]"
+          />
+          <span className="text-sm text-smoke">
+            {needle === ""
+              ? `Toplam ${zones.length} posta kodu, ${activeCount} tanesine teslimat var`
+              : `${zones.length} posta kodundan ${visibleCount} tanesi eşleşti`}
+          </span>
+        </div>
+      )}
+
       <div className="space-y-3">
-        {grouped.map((group) => {
+        {visible.map((group) => {
           const open = openCities.has(group.city);
+          // Aramada süzülmüş grup gelir: sayılar da altta gerçekten duran
+          // satırları anlatır, yoksa başlık listeyle çelişirdi.
           const openZones = group.zones.filter((zone) => zone.active).length;
 
           return (
             <section key={group.city} className="border border-line bg-char">
               {/*
-                Grup başlığı bir düğme: kapalıyken şehrin adı ve kaç kodunun
-                açık olduğu görünür, gerisi istenince gelir.
+                Grup başlığı bir düğme: kapalıyken şehrin adı ve o şehre
+                teslimat olup olmadığı görünür, gerisi istenince gelir.
               */}
               <h2>
                 <button
@@ -471,11 +564,14 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
                     </span>
                     <span className="font-display font-bold text-bone">{group.city}</span>
                   </span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    {openZones === 0 && <Badge tone="off">TESLİMAT YOK</Badge>}
-                    <span className="tag tabular-nums text-smoke">
-                      {openZones} / {group.zones.length} açık
-                    </span>
+                  {/* Teslimatı hiç olmayan şehir kırmızı yazılır: listeyi
+                      tarayan göz önce "hangi şehir kapalı" diye bakar. */}
+                  <span
+                    className={`shrink-0 text-right text-sm ${
+                      openZones === 0 ? "text-flame" : "text-smoke"
+                    }`}
+                  >
+                    {citySummary(group.zones.length, openZones)}
                   </span>
                 </button>
               </h2>
@@ -509,19 +605,23 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
                                 <span className="text-smoke font-normal"> · {zone.city}</span>
                               )}
                             </p>
-                            <p className="tag text-smoke mt-1.5 tabular-nums">
-                              min {formatCents(zone.minOrderCents)} · ücret{" "}
-                              {zone.feeCents === 0 ? "yok" : formatCents(zone.feeCents)}
+                            {/* Kısaltılmış hâli ("min 15,00 · ücret 2,00")
+                                her okunuşta çözülüyordu; koşullar müşteriye
+                                de bu cümlelerle gösteriliyor. */}
+                            <p className="mt-1.5 text-sm leading-relaxed text-smoke">
+                              En az {formatCents(zone.minOrderCents)} tutarında sepet ·{" "}
+                              {zone.feeCents === 0
+                                ? "teslimat ücretsiz"
+                                : `${formatCents(zone.feeCents)} teslimat ücreti`}
                               {zone.freeOverCents > 0 &&
-                                ` · ${formatCents(zone.freeOverCents)} üzeri bedava`}
-                              {" · ~"}
-                              {zone.etaMinutes} dk
+                                ` (${formatCents(zone.freeOverCents)} üzeri ücretsiz)`}{" "}
+                              · yaklaşık {zone.etaMinutes} dakikada teslim
                             </p>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 shrink-0">
                             <Badge tone={zone.active ? "on" : "off"}>
-                              {zone.active ? "AÇIK — TESLİMAT VAR" : "KAPALI — TESLİMAT YOK"}
+                              {zone.active ? "TESLİMAT VAR" : "TESLİMAT YOK"}
                             </Badge>
                             <Button
                               variant="ghost"
@@ -547,6 +647,23 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
           );
         })}
 
+        {zones.length > 0 && visibleCount === 0 && (
+          <div className="border border-line bg-char px-5 py-10 text-center">
+            <p className="text-sm text-smoke">
+              &quot;{search.trim()}&quot; ile eşleşen teslimat bölgesi yok.
+            </p>
+            <p className="mt-3">
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="focus-ring tag text-smoke underline underline-offset-4 hover:text-amber"
+              >
+                ARAMAYI TEMİZLE
+              </button>
+            </p>
+          </div>
+        )}
+
         {zones.length === 0 && (
           <p className="border border-line bg-char px-5 py-10 text-center text-sm text-smoke">
             Henüz teslimat bölgesi yok — bu haliyle hiçbir adrese teslimat yapılamaz.
@@ -554,12 +671,16 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
         )}
       </div>
 
-      <p className="text-xs text-smoke/70 mt-5 leading-relaxed">
-        Şehrin üstüne tıklayınca o şehrin posta kodları açılır. Açık/kapalı durumu{" "}
+      {/* Ekranın kendini anlatan cümleleri: "açık/kapalı" gibi panele özgü
+          kelimeler yerine ekranda ne yazıyorsa o kullanılır. */}
+      <p className="mt-5 text-sm leading-relaxed text-smoke/80">
+        Arama kutusu hem posta kodunda hem şehir adında arar; eşleşen şehirler
+        kendiliğinden açılır. Şehrin adına tıklayınca o şehrin posta kodları görünür.
+        Bir koda teslimat yapılıp yapılmayacağı{" "}
         <strong className="text-bone">DÜZENLE</strong> içinde, diğer alanlarla birlikte
-        değişir ve birlikte kaydedilir. Bölgeyi silmek yerine kapatmak, o posta kodunu
-        geçici olarak (ör. yoğun bir akşamda) siparişe kapatmanın güvenli yoludur;
-        ayarlar durur, sonra tek tıkla açılır.
+        değişir ve birlikte kaydedilir. Bölgeyi silmek yerine teslimatı kapatmak, o posta
+        kodunu geçici olarak (ör. yoğun bir akşamda) siparişe kapatmanın güvenli yoludur:
+        tutarlar ve süre olduğu gibi kalır, sonra tek tıkla geri açılır.
       </p>
 
       <ConfirmDialog
