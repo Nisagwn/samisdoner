@@ -456,18 +456,61 @@ model Customer {
   /// eşleşmeyen jeton reddedilir.
   tokenVersion Int @default(0)
 
+  /// Reklam e-postası izni — UWG § 7 Abs. 2 Nr. 3 uyarınca **açık rıza**
+  /// şarttır ve varsayılanı `false` olmak zorundadır. Önceden işaretli bir
+  /// kutu ya da "kayıt olmakla kabul etmiş sayılırsınız" cümlesi rıza değildir
+  /// (DSGVO Art. 4 Nr. 11: "eindeutige bestätigende Handlung").
+  marketingOptIn   Boolean   @default(false)
+  /// Rızanın **ne zaman** verildiği. DSGVO Art. 7 Abs. 1 ispat yükünü
+  /// işletmeye yükler: "izin verdi" demek yetmez, ne zaman verdiği
+  /// gösterilebilmelidir. İzin geri alınınca null'a döner.
+  marketingOptInAt DateTime?
+  /// Teslimattan sonra gelen "siparişinizi değerlendirin" e-postası.
+  /// Reklam değildir (kendi siparişine dair bir hatırlatma), bu yüzden
+  /// varsayılanı açık; yine de kapatılabilir olmalı.
+  reviewMailsOptIn Boolean   @default(true)
+
   active       Boolean   @default(true)
   createdAt    DateTime  @default(now())
   lastLoginAt  DateTime?
   /// Doldurulduysa hesap DSGVO Art. 17 uyarınca anonimleştirilmiştir.
   anonymizedAt DateTime?
 
-  orders         Order[]
-  passwordResets PasswordReset[]
-  addresses      CustomerAddress[]
-  favorites      Favorite[]
+  orders             Order[]
+  passwordResets     PasswordReset[]
+  addresses          CustomerAddress[]
+  favorites          Favorite[]
+  emailVerifications EmailVerification[]
+  reviews            Review[]
+  loyaltyRewards     LoyaltyReward[]
 
   @@index([createdAt])
+}
+
+/// E-posta doğrulama jetonu.
+///
+/// `PasswordReset` ile birebir aynı kalıp: jeton **düz saklanmaz**, yalnızca
+/// SHA-256 özeti tutulur ve bir jeton yalnızca bir kez kullanılır. Ayrı bir
+/// tablo olmasının sebebi, iki akışın ömürlerinin farklı olması — doğrulama
+/// bağlantısı bir hafta, sıfırlama bağlantısı bir saat yaşar; tek tabloda
+/// tutmak "hangi jeton neyi yapar" sorusunu uygulama katmanına taşırdı ve
+/// doğrulama jetonuyla parola değiştirilmesi bir tek `if` hatası kadar uzakta
+/// olurdu.
+model EmailVerification {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  /// Doğrulanan adres. Kullanıcı jetonu aldıktan sonra e-postasını
+  /// değiştirirse, eski adrese giden bağlantı yeni adresi doğrulamamalı.
+  email     String
+  /// Jetonun SHA-256 özeti (base64url).
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([customerId, createdAt])
 }
 
 /// Parola sıfırlama jetonu.
@@ -544,6 +587,17 @@ model Favorite {
  * ══════════════════════════════════════════════════════════════════ yönetim
  */
 
+/// Panel kullanıcısı.
+///
+/// Panele girişin uzun süre tek yolu `.env` içindeki tek bir `ADMIN_PASSWORD`
+/// idi. Bir dönerci için bu iki şeyi imkânsız kılıyordu: bir siparişi kimin
+/// iptal ettiğini söylemek ve işten ayrılan bir çalışanın erişimini kesmek.
+/// Ortak parola paylaşılır, yazılır, unutulmaz — kesilmesi ise herkesin
+/// parolasını değiştirmek demektir.
+///
+/// Tablo şemada baştan beri vardı ama hiç okunmuyordu; artık giriş buradan
+/// geçer. Ortak parola **kurtarma yolu** olarak duruyor (bkz. lib/admin/auth.ts):
+/// veritabanında hiç kullanıcı yoksa ilk girişin bir yerden yapılması gerekir.
 model AdminUser {
   id           String    @id @default(cuid())
   email        String    @unique
@@ -553,6 +607,130 @@ model AdminUser {
   active       Boolean   @default(true)
   createdAt    DateTime  @default(now())
   lastLoginAt  DateTime?
+
+  /// Bu kullanıcının açık oturumlarını topluca düşürür — müşteri tarafındaki
+  /// `Customer.tokenVersion` ile aynı mantık. Parola değişiminde, rol
+  /// değişiminde ve hesap kapatıldığında artar. Rol değişiminde artması şart:
+  /// aksi hâlde STAFF'a indirilmiş biri, elindeki jeton OWNER yazdığı için
+  /// sekiz saat daha OWNER kalırdı.
+  tokenVersion Int @default(0)
+}
+
+/**
+ * ═══════════════════════════════════════════════════ değerlendirme ve sadakat
+ */
+
+/// Müşteri değerlendirmesi.
+///
+/// Tek kural her şeyi belirliyor: **yalnızca teslim edilmiş bir siparişin
+/// sahibi yazabilir.** Site üzerinde serbest yorum kutusu yok. Sebep ticari
+/// değil hukuki: UWG § 5b Abs. 3 uyarınca tüketici değerlendirmesi yayımlayan
+/// bir işletme, bu değerlendirmelerin gerçekten üründen yararlanmış kişilerden
+/// geldiğini **temin ettiğini** ve bunu nasıl temin ettiğini açıklamak
+/// zorundadır. Sipariş bağı burada o teminatın kendisidir.
+///
+/// `orderId` bir yabancı anahtar değil, düz bir sütundur ve bu bilinçli:
+/// `Order` modeli sipariş yaşam döngüsüne ait ve bu şemada ayrı bir sorumluluk
+/// alanı; ona geri-ilişki eklemek o modeli değiştirmeyi gerektirirdi.
+/// Benzersizlik kısıtı ilişkinin sağlayacağı asıl güvenceyi (sipariş başına tek
+/// değerlendirme) zaten veriyor; siparişin varlığı yazmadan önce uygulama
+/// katmanında doğrulanır (bkz. lib/reviews/eligibility.ts).
+model Review {
+  id String @id @default(cuid())
+
+  /// Değerlendirilen sipariş. **Sipariş başına tek değerlendirme** — kısıt
+  /// veritabanında, çünkü iki sekmeden aynı anda gönderilen iki form
+  /// uygulama katmanındaki bir kontrolü yarışla geçebilir.
+  orderId String @unique
+  /// Sipariş numarası, panelde aramak için. Kopyadır: sipariş anonimleştirilse
+  /// bile değerlendirmenin hangi siparişe ait olduğu kaybolmasın.
+  orderNo String @default("")
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  /// Yemeğin puanı, 1–5. Zorunlu: değerlendirmenin sebebi bu.
+  foodRating     Int
+  /// Teslimatın puanı, 1–5. **Gel-al siparişte null** — teslimat olmayan bir
+  /// siparişte teslimat puanı sormak, ortalamayı kirleten bir zorunluluk
+  /// olurdu. Ortalamaya yalnızca dolu olanlar girer.
+  deliveryRating Int?
+
+  /// Serbest metin. Boş bırakılabilir: yıldız vermek isteyip yazmak istemeyen
+  /// müşteriyi metin zorunluluğuyla kaçırmanın anlamı yok.
+  comment String @default("")
+
+  /// Sitede görünen ad — "Ahmet K." gibi kısaltılmış hâli yazma anında
+  /// dondurulur. Müşterinin adı sonradan değişse ya da hesabı
+  /// anonimleştirilse bile yayımlanmış yorumun altındaki ad değişmemeli.
+  authorName String @default("")
+
+  /// Sipariş anındaki dil; yorumun hangi dilde yazıldığını bilmeden onu doğru
+  /// listelemek mümkün değil.
+  lang String @default("de")
+
+  /// Sitede görünüyor mu. İşletme hakaret/spam içeren bir yorumu
+  /// gizleyebilir ama **silemez**: silinebilir olsaydı "yalnızca iyi yorumlar
+  /// duruyor" şüphesi haklı olurdu. Gizlenen yorum ortalamaya da girmez ve
+  /// gizlenme sebebi kayda yazılır.
+  published    Boolean @default(true)
+  hiddenReason String  @default("")
+
+  /// İşletmenin cevabı. Kötü bir yoruma verilen iyi bir cevap, o yorumu okuyan
+  /// için yorumun kendisinden daha bilgilendiricidir.
+  reply     String    @default("")
+  repliedAt DateTime?
+  /// Cevabı yazan panel kullanıcısının e-postası. Düz metin: `AdminUser`
+  /// kaydı silinse bile cevabın kimden geldiği kayıtta kalsın.
+  repliedBy String    @default("")
+
+  createdAt DateTime @default(now())
+
+  @@index([published, createdAt])
+  @@index([customerId, createdAt])
+}
+
+/// Damga kartı ödülü.
+///
+/// Almanya'da döner dükkânının klasik "10 damga = 1 döner" kartının dijital
+/// hâli. Damgalar **sayılmaz, türetilir**: müşterinin teslim edilmiş sipariş
+/// sayısı sayılır ve daha önce ödüle çevrilmiş olanlar düşülür. Bu yüzden
+/// burada bir "damga sayacı" sütunu yok — olsaydı, iptal edilen bir siparişin
+/// damgasını geri almak ya da sayacın gerçek sipariş sayısından ayrı düşmesi
+/// gibi bir sınıf hata doğardı.
+///
+/// `throughOrderCount`, ödül verildiği andaki **kümülatif** teslim edilmiş
+/// sipariş sayısıdır. Bir sonraki ödül eşiği bunun üstüne kurulur; aynı
+/// siparişler ikinci kez ödüle dönüşemez.
+///
+/// Ödül bir indirim kodu değil, **tezgâhta gösterilen bir koddur**: siparişin
+/// toplamına otomatik indirim uygulamak ödeme akışına dokunmayı gerektirir ve
+/// bu kart zaten kasada kullanılan kâğıdın yerini alıyor. Personel kodu panele
+/// girer, ödül kullanılmış işaretlenir.
+model LoyaltyReward {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  /// Müşteriye gösterilen kod ("SD-7K4M-2QX9"). Tezgâhta okunacağı için
+  /// karıştırılabilir harfler (I/O/0/1) alfabeden çıkarılır.
+  code String @unique
+
+  /// Ödül verildiği andaki kümülatif teslim edilmiş sipariş sayısı.
+  throughOrderCount Int
+  /// Ödülün kaç damgaya karşılık geldiği — eşik sonradan değişse bile
+  /// verilmiş ödülün hikâyesi kayıtta kalsın.
+  stampsUsed        Int
+
+  issuedAt   DateTime  @default(now())
+  redeemedAt DateTime?
+  /// Ödülü kasada kullandıran panel kullanıcısının e-postası.
+  redeemedBy String    @default("")
+  /// Ödülün son kullanma tarihi. Süresiz bir ödül, işletmenin defterinde
+  /// kapanmayan bir borç olarak durur.
+  expiresAt  DateTime
+
+  @@index([customerId, issuedAt])
 }
 
 /// Giriş denemesi sayacı. Bellekte tutulursa sunucu yeniden başlayınca sıfırlanır
@@ -615,8 +793,19 @@ enum PaymentStatus {
   EXPIRED
 }
 
+/// Panel rolleri — üç kademe, artan yetkiyle.
+///
+/// Ayrımın ölçütü "ne kadar güvenilir" değil, **hatanın bedeli**: vardiyadaki
+/// herkes sipariş alıp fiş basabilmeli (STAFF), ama yanlışlıkla değiştirilen
+/// bir teslimat ücreti ya da işten çıkmış birinin duran erişimi günlerce fark
+/// edilmeyen bir kayıptır. Bu yüzden kurulum ekranları MANAGER'a, para ve
+/// personel OWNER'a bağlı.
 enum AdminRole {
+  /// Her şey: personel yönetimi, ciro ekranı, iade.
   OWNER
+  /// Vardiya + kurulum: menü, çalışma saatleri, teslimat bölgeleri.
+  MANAGER
+  /// Yalnızca vardiya: sipariş akışı, fiş, değerlendirme cevabı.
   STAFF
 }
 
