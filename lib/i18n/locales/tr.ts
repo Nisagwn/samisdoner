@@ -382,4 +382,96 @@ export const trTranslations = {
     homeBtn: "ANA SAYFA",
     callHint: "Acelen varsa telefonla sipariş verebilirsin:",
   },
+
+  /*
+   * ───────────────────────────────── ödeme akışı: zamanlama, bahşiş, kupon
+   *
+   * Ayrı bir blok: bu anahtarlar `cart` ve `checkout` bloklarının arasına
+   * serpiştirilseydi, aynı dosyada çalışan iki kişi her seferinde aynı
+   * satırlarda çakışırdı. Blok sonda duruyor ve yalnızca ödeme adımının
+   * ekledikleri burada.
+   */
+  orderFlow: {
+    /* --- zamanlama (Vorbestellung) --- */
+    timingTitle: "Ne zaman olsun?",
+    timingAsap: "En kısa sürede",
+    timingAsapHint: "Yaklaşık {minutes} dk",
+    timingScheduled: "Sonrası için planla",
+    timingSlotLabel: "Teslim saati",
+    timingSlotPlaceholder: "Saat seç",
+    timingNoSlots: "Bugün için seçilebilir saat kalmadı.",
+    timingClosedHint: "Şu an kapalıyız, ama açık olduğumuz bir saate sipariş verebilirsiniz.",
+
+    /* --- ödeme yöntemi --- */
+    paymentTitle: "Nasıl ödemek istersiniz?",
+    paymentOnline: "Online ödeme",
+    paymentOnlineHint: "PayPal, kart, Apple Pay ve Google Pay — Stripe üzerinden güvenli.",
+    paymentCash: "Kapıda nakit",
+    paymentCashHint: "Parayı teslimatta veriyorsunuz. Lütfen mümkünse bozuk para bulundurun.",
+    paymentCashPickupHint: "Ödemeyi dükkânda, siparişi alırken yapıyorsunuz.",
+    paymentCard: "Kapıda kart",
+    paymentCardHint: "Kurye kart okuyucuyla geliyor.",
+    paymentCardPickupHint: "Kartla ödemeyi dükkânda yapıyorsunuz.",
+
+    /* --- bahşiş (Trinkgeld) --- */
+    tipTitle: "Ekibimize bahşiş",
+    tipHint: "Tamamen size kalmış — bahşişin tamamı çalışanlarımıza gider.",
+    tipNone: "Yok",
+    tipCustom: "Kendim yazayım",
+    tipCustomLabel: "Bahşiş tutarı (€)",
+    tipMaxHint: "En fazla {amount} bırakılabilir.",
+
+    /* --- kupon (Gutscheincode) --- */
+    couponTitle: "İndirim kodunuz var mı?",
+    couponLabel: "İndirim kodu",
+    couponPlaceholder: "ÖRN: DONER10",
+    couponApply: "Uygula",
+    couponRemove: "Kaldır",
+    couponApplied: "{code} uygulandı",
+    couponChecking: "Kontrol ediliyor…",
+
+    /* --- kupon ret sebepleri --- */
+    couponUnknown: "Bu kod geçerli değil. Lütfen kontrol edip tekrar deneyin.",
+    couponInactive: "Bu kampanya şu anda kapalı.",
+    couponNotStarted: "Bu kampanya henüz başlamadı.",
+    couponExpired: "Bu kodun süresi dolmuş.",
+    couponExhausted: "Bu kodun kullanım hakkı dolmuş.",
+    couponWrongDelivery: "Bu kod yalnızca teslimat siparişlerinde geçerli.",
+    couponWrongPickup: "Bu kod yalnızca gel-al siparişlerinde geçerli.",
+    couponBelowMinimum: "Bu kod {amount} ve üzeri siparişlerde geçerli.",
+    couponGone: "Bu kodun son kullanım hakkı az önce tükendi. Kodu kaldırıp tekrar deneyin.",
+
+    /* --- özet satırları --- */
+    summaryDiscount: "İndirim",
+    summaryTip: "Bahşiş",
+    summaryPreOrder: "Teslim saati",
+
+    /* --- hatalar --- */
+    errSlotUnavailable: "Seçtiğiniz saat artık uygun değil. Lütfen yeni bir saat seçin.",
+    errPaymentMethod: "Seçtiğiniz ödeme yöntemi şu anda kullanılamıyor.",
+
+    /* --- takip sayfası: iptal --- */
+    cancelTitle: "Siparişi iptal et",
+    cancelHint: "Mutfak siparişi üstlenene kadar iptal edebilirsiniz.",
+    cancelUntil: "{time} saatine kadar iptal edebilirsiniz.",
+    cancelConfirm: "Emin misiniz? Sipariş iptal edilecek ve ödediğiniz tutar iade edilecek.",
+    cancelConfirmYes: "Evet, iptal et",
+    cancelConfirmNo: "Vazgeç",
+    cancelPending: "İptal ediliyor…",
+    cancelDone: "Siparişiniz iptal edildi.",
+    cancelTooLate: "Mutfak siparişi üstlendiği için buradan iptal edilemiyor. Lütfen bizi arayın.",
+    cancelFailed: "Sipariş iptal edilemedi. Lütfen bizi arayın.",
+    cancelRefundFailed:
+      "Sipariş iptal edildi ama iade işlemi tamamlanamadı. Lütfen bizi arayın — tutar mutlaka iade edilecek.",
+
+    /* --- takip sayfası: zaman çizelgesi --- */
+    timelineTitle: "Sipariş geçmişi",
+    timelineRefunded: "Tutar iade edildi",
+    timelineDelayed: "Teslim saati {minutes} dk ötelendi",
+    paymentDue: "Kapıda ödenecek",
+    paymentDueCash: "Teslimatta nakit ödenecek: {amount}",
+    paymentDueCard: "Teslimatta kartla ödenecek: {amount}",
+    paymentDuePickupCash: "Dükkânda nakit ödenecek: {amount}",
+    paymentDuePickupCard: "Dükkânda kartla ödenecek: {amount}",
+  },
 };
