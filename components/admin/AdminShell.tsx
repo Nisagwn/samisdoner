@@ -91,6 +91,19 @@ const NAV_GROUPS: {
         exact: false,
       },
       {
+        /*
+         * Kupon, menünün hemen altında ve `catalog` yetkisinde: kampanya açmak
+         * fiyat belirlemenin bir biçimi ve hatasının bedeli de aynı — yanlış
+         * girilmiş bir kupon günlerce fark edilmeden her siparişte para
+         * kaybettirir.
+         */
+        href: "/admin/gutscheine",
+        label: "İndirim kuponları",
+        hint: "Kampanya kodları, geçerlilik",
+        exact: false,
+        permission: "catalog" as const,
+      },
+      {
         href: "/admin/betrieb",
         label: "İşletme",
         hint: "Çalışma saati, sipariş anahtarı",
