@@ -64,8 +64,32 @@ export const createOrderSchema = z
     lang: z.enum(["tr", "de"]).default("de"),
     customer: guestCustomerSchema,
     address: deliveryAddressSchema.optional(),
-    /** ISO tarih; boşsa "en kısa sürede". */
+    /**
+     * İleri saatli sipariş (Vorbestellung) için istenen teslim saati; boşsa
+     * "en kısa sürede". Değerin gerçekten seçilebilir bir saat olduğu burada
+     * **denetlenmez** — o karar çalışma saatlerini ve tatil günlerini bilen
+     * `checkOrderability`'ye aittir. Burada yalnızca biçim doğrulanır.
+     */
     requestedAt: z.string().datetime().optional(),
+    /**
+     * Ödeme yöntemi. Varsayılan ONLINE: alan hiç gönderilmeyen eski istemci
+     * de çalışmaya devam etsin.
+     *
+     * Yöntemin gerçekten açık olup olmadığı (kapıda ödeme anahtarı, gel-al /
+     * teslimat ayrımı) sunucuda ayrıca denetlenir; burada yalnızca tanınan bir
+     * değer olduğu doğrulanır.
+     */
+    paymentMethod: z.enum(["ONLINE", "CASH", "CARD_ON_DELIVERY"]).default("ONLINE"),
+    /** Gutscheincode. Boş dize "kupon yok" demektir. */
+    couponCode: z.string().trim().max(40).optional().default(""),
+    /**
+     * Bahşiş (cent).
+     *
+     * Üst sınır burada dar tutulmaz: asıl kelepçe `clampTip` içinde ve sepete
+     * bağlı (bkz. lib/orders/tip.ts). Buradaki sınır yalnızca saçma bir sayının
+     * hesaba hiç girmemesi için.
+     */
+    tipCents: z.number().int().min(0).max(100_000).optional().default(0),
   })
   // Kurye siparişinde adres zorunludur; gel-alda hiç sorulmaz.
   .refine((value) => value.fulfillment !== "DELIVERY" || value.address !== undefined, {

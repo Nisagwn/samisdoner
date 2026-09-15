@@ -82,7 +82,34 @@ function toLineItems(request: CheckoutRequest): Stripe.Checkout.SessionCreatePar
     });
   }
 
+  /*
+   * Bahşiş ayrı satır.
+   *
+   * Ücretle birleştirilmedi: müşteri ödeme ekranında bıraktığı bahşişi
+   * görebilmeli ve "bu para nereden çıktı" diye sormamalı. Ayrıca KDV
+   * açısından da ayrı bir kalem (bkz. lib/orders/tip.ts) — Stripe tarafında
+   * vergi hesaplanmıyor ama fişteki ayrım doğru okunuyor.
+   */
+  if (request.tipCents > 0) {
+    items.push({
+      quantity: 1,
+      price_data: {
+        currency: "eur",
+        unit_amount: request.tipCents,
+        product_data: { name: request.tipLabel },
+      },
+    });
+  }
+
   return items;
+}
+
+/** Satırların indirim öncesi toplamı — beyan edilen toplamla karşılaştırmak için. */
+function sumOf(items: Stripe.Checkout.SessionCreateParams.LineItem[]): number {
+  return items.reduce(
+    (sum, item) => sum + (item.price_data?.unit_amount ?? 0) * (item.quantity ?? 1),
+    0
+  );
 }
 
 /**
@@ -121,9 +148,47 @@ export const stripeProvider: PaymentProvider = {
   name: "stripe",
 
   async createCheckout(request: CheckoutRequest): Promise<CheckoutSession> {
+    const items = toLineItems(request);
+
+    /*
+     * Tahsil edilecek tutar, sunucunun hesapladığı tutarla birebir aynı mı.
+     *
+     * Bu kontrol bir paranoya değil: satırlar bu dosyada kuruluyor, toplam
+     * `composeTotals` içinde hesaplanıyor. İkisinin arasına bir gün yeni bir
+     * kalem (ambalaj ücreti, kampanya) girer ve yalnız birine eklenirse,
+     * müşteriden ekranda yazandan başka bir tutar çekilir ve fark ancak
+     * muhasebede görülür. Burada durmak, orada bulmaktan ucuz.
+     */
+    const expected = sumOf(items) - request.discountCents;
+    if (expected !== request.totalCents) {
+      throw new Error(
+        `Ödeme tutarı tutmuyor: satırlar ${expected} cent, sipariş ${request.totalCents} cent.`
+      );
+    }
+
+    /*
+     * İndirim, Stripe'ın kendi indirim mekanizmasıyla uygulanır: negatif
+     * tutarlı satır kabul edilmiyor. Kupon siparişe özel ve tek kullanımlık
+     * üretilir — kataloğa kalıcı bir kupon bırakmanın anlamı yok, indirimin
+     * kuralı zaten bizim veritabanımızda.
+     */
+    let discountId: string | null = null;
+    if (request.discountCents > 0) {
+      const coupon = await stripe().coupons.create({
+        amount_off: request.discountCents,
+        currency: "eur",
+        duration: "once",
+        name: request.discountLabel,
+        max_redemptions: 1,
+        metadata: { orderNo: request.orderNo },
+      });
+      discountId = coupon.id;
+    }
+
     const session = await stripe().checkout.sessions.create({
       mode: "payment",
-      line_items: toLineItems(request),
+      line_items: items,
+      ...(discountId ? { discounts: [{ coupon: discountId }] } : {}),
       // Sipariş numarası iki yere birden yazılır: metadata webhook'ta okunur,
       // client_reference_id Stripe panelinde siparişi bulmayı kolaylaştırır.
       metadata: { orderNo: request.orderNo },

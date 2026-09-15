@@ -13,12 +13,17 @@ import {
   progressSteps,
 } from "@/lib/orders/status";
 import { describeCancelReason } from "@/lib/orders/cancelReasons";
+import { customerCancelWindow } from "@/lib/orders/cancelWindow";
 import { reorderDrafts } from "@/lib/orders/reorder";
 import { getCurrentCustomer } from "@/lib/account/guard";
+import { deTranslations } from "@/lib/i18n/locales/de";
+import { trTranslations } from "@/lib/i18n/locales/tr";
+import type { Translations } from "@/lib/i18n/locales/de";
 import { AutoRefresh } from "./AutoRefresh";
 import { PaymentSync } from "./PaymentSync";
 import { ClearCart } from "./ClearCart";
 import { ReorderButton } from "./OrderActions";
+import { CancelOrder } from "./CancelOrder";
 
 /**
  * Misafir sipariş takip sayfası.
@@ -63,6 +68,31 @@ export default async function OrderTrackingPage({ params }: Params) {
   // siparişte müşteri zaten bekliyor, ona menüyü göstermenin acelesi yok.
   const finished = isTerminal(order.status);
   const drafts = finished ? reorderDrafts(order.lines) : [];
+
+  /*
+   * İptal penceresi.
+   *
+   * Kural saf mantık olarak `lib/orders/cancelWindow.ts` içinde ve testli;
+   * burada yalnızca okunuyor. Kapıda ödemeli siparişte de aynı pencere
+   * geçerli — iade edilecek para olmaması iptal hakkını değiştirmiyor.
+   */
+  const cancellable = customerCancelWindow(order);
+
+  // İptal metinleri sayfanın kendi sözlüğünde değil, ödeme akışının ortak
+  // bloğunda duruyor: aynı cümleler ödeme ekranında da geçiyor.
+  const flow = (de ? deTranslations : trTranslations).orderFlow;
+
+  const cancelLabels = {
+    title: flow.cancelTitle,
+    hint: flow.cancelHint,
+    confirm: flow.cancelConfirm,
+    confirmYes: flow.cancelConfirmYes,
+    confirmNo: flow.cancelConfirmNo,
+    pending: flow.cancelPending,
+    tooLate: flow.cancelTooLate,
+    failed: flow.cancelFailed,
+    refundFailed: flow.cancelRefundFailed,
+  };
 
   // Ödeme tamamlanmadan sipariş mutfağa düşmez; müşteriye de bunu söyleriz.
   const awaitingPayment = order.status === "PENDING_PAYMENT";
@@ -129,10 +159,42 @@ export default async function OrderTrackingPage({ params }: Params) {
             {order.serviceFeeCents > 0 && (
               <Row label={t.serviceFee} value={formatCents(order.serviceFeeCents)} muted />
             )}
+            {/* İndirim eksi işaretle; kupon kodu etikette, "hangi kod geçti"
+                sorusu faturaya bakarak cevaplanabilsin. */}
+            {order.discountCents > 0 && (
+              <Row
+                label={order.couponCode ? `${flow.summaryDiscount} · ${order.couponCode}` : flow.summaryDiscount}
+                value={`−${formatCents(order.discountCents)}`}
+                good
+              />
+            )}
+            {order.tipCents > 0 && (
+              <Row label={flow.summaryTip} value={formatCents(order.tipCents)} muted />
+            )}
             <Row label={t.total} value={formatCents(order.totalCents)} />
           </dl>
 
           <VatNote order={order} label={t.vatIncluded} />
+
+          {/*
+            Kapıda ödenecek tutar.
+
+            Müşterinin teslimat anında hazırlaması gereken tek bilgi bu ve
+            özetin en görünür yerinde durmalı: kapıda "ne kadardı?" diye
+            telefona bakmak zorunda kalmasın.
+          */}
+          {order.paymentMethod !== "ONLINE" && order.paymentStatus !== "PAID" && (
+            <p className="mt-4 border border-amber bg-amber/10 px-4 py-3 text-sm text-amber">
+              {(order.paymentMethod === "CASH"
+                ? order.fulfillment === "DELIVERY"
+                  ? flow.paymentDueCash
+                  : flow.paymentDuePickupCash
+                : order.fulfillment === "DELIVERY"
+                  ? flow.paymentDueCard
+                  : flow.paymentDuePickupCard
+              ).replace("{amount}", formatCents(order.totalCents))}
+            </p>
+          )}
         </Section>
 
         <Section title={order.fulfillment === "DELIVERY" ? t.delivery : t.pickup}>
@@ -167,15 +229,32 @@ export default async function OrderTrackingPage({ params }: Params) {
           tarayıcının geri düğmesi bu iş için yeterli değil, çünkü geri gitmek
           ödeme akışının içine düşer.
         */}
+        <Timeline order={order} de={de} t={t} flow={flow} />
+
         <Section title={t.next}>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-start gap-3">
             <ReorderButton drafts={drafts} label={t.orderAgain} added={t.addedToCart} />
             <ActionLink href="/speisekarte" primary={!finished}>
               {t.toMenu}
             </ActionLink>
             {loggedIn && <ActionLink href="/konto">{t.myOrders}</ActionLink>}
             <ActionLink href="/">{t.backHome}</ActionLink>
+
+            {/*
+              İptal düğmesi yalnızca pencere açıkken çıkar; kuralı
+              `customerCancelWindow` veriyor ve uç aynı kararı yeniden
+              denetliyor. Gizlenmiş bir düğme yetki kontrolü değil.
+            */}
+            {cancellable.ok && <CancelOrder token={token} labels={cancelLabels} />}
           </div>
+
+          {cancellable.ok && (
+            <p className="mt-3 text-xs leading-relaxed text-smoke/70">
+              {cancellable.until
+                ? flow.cancelUntil.replace("{time}", formatTime(cancellable.until, de))
+                : flow.cancelHint}
+            </p>
+          )}
         </Section>
 
         <footer className="mt-12 border-t border-line pt-6 text-xs text-smoke">
@@ -292,6 +371,70 @@ function Eta({
   );
 }
 
+/**
+ * Sipariş geçmişi — ne zaman ne oldu.
+ *
+ * İlerleme çubuğu "neredeyiz" sorusunu cevaplıyor; bu liste "ne zaman oldu"
+ * sorusunu. İkisi ayrı: çubuk şu ana bakar ve iptal/ret gibi durumları hiç
+ * göstermez, çizelge ise olanın tamamını saatiyle birlikte gösterir — gecikme
+ * bildirimi ve iade hareketi dahil, ki ikisi de durum değişimi değil.
+ *
+ * Kaynak `OrderEvent`: append-only ve zaten var. İkinci bir kayıt tutulmuyor.
+ */
+function Timeline({
+  order,
+  de,
+  t,
+  flow,
+}: {
+  order: OrderWithDetails;
+  de: boolean;
+  t: TrackingText;
+  flow: Translations["orderFlow"];
+}) {
+  const entries = order.events
+    .map((event) => {
+      const meta = (event.meta ?? {}) as Record<string, unknown>;
+
+      // Para hareketi: durum değişmediği için from/to aynı, ayrımı meta yapar.
+      if (meta.event === "refund") {
+        return { at: event.at, label: flow.timelineRefunded };
+      }
+      // Bilinçli gecikme bildirimi; yine bir durum geçişi değil.
+      if (typeof meta.delayMinutes === "number") {
+        return {
+          at: event.at,
+          label: flow.timelineDelayed.replace("{minutes}", String(meta.delayMinutes)),
+        };
+      }
+      // Durumu değiştirmeyen diğer kayıtlar çizelgeye girmez: müşteri için
+      // "hiçbir şey olmadı" satırı gürültüden başka bir şey değil.
+      if (event.from === event.to) return null;
+
+      return { at: event.at, label: STATUS_LABELS[event.to][de ? "de" : "tr"] };
+    })
+    .filter((entry): entry is { at: Date; label: string } => entry !== null);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <Section title={flow.timelineTitle}>
+      <ol className="space-y-2 border-l border-line pl-4">
+        {entries.map((entry, i) => (
+          <li key={i} className="relative text-sm">
+            <span
+              className="absolute -left-[21px] top-2 h-1.5 w-1.5 rounded-full bg-line"
+              aria-hidden
+            />
+            <span className="font-mono text-xs text-smoke">{formatTime(entry.at, de)}</span>
+            <span className="ml-3 text-bone">{entry.label}</span>
+          </li>
+        ))}
+      </ol>
+    </Section>
+  );
+}
+
 function VatNote({ order, label }: { order: OrderWithDetails; label: string }) {
   // Döküm sipariş anında dondurulmuştur; güncel fiyatlardan hesaplanmaz.
   const buckets = Array.isArray(order.vatBreakdown)
@@ -348,11 +491,23 @@ function ActionLink({
   );
 }
 
-function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+function Row({
+  label,
+  value,
+  muted,
+  good,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+  /** Müşterinin lehine olan satır (indirim). */
+  good?: boolean;
+}) {
+  const tone = good ? "text-herb" : muted ? "text-smoke" : "text-bone";
   return (
-    <div className={`flex justify-between ${muted ? "text-smoke" : "text-bone"}`}>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
+    <div className={`flex justify-between gap-3 ${tone}`}>
+      <dt className="min-w-0 truncate">{label}</dt>
+      <dd className="shrink-0">{value}</dd>
     </div>
   );
 }

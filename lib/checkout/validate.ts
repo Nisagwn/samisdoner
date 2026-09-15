@@ -124,6 +124,14 @@ export function toCreateOrderInput(input: {
   values: CheckoutFormValues;
   zip: string;
   city: string;
+  /** Seçilen ödeme yöntemi; verilmezse online. */
+  paymentMethod?: "ONLINE" | "CASH" | "CARD_ON_DELIVERY";
+  /** Sunucunun onayladığı kupon kodu; kupon yoksa boş. */
+  couponCode?: string;
+  /** Sunucunun kelepçelediği bahşiş (cent). */
+  tipCents?: number;
+  /** İleri saatli siparişte seçilen saat (ISO); "en kısa sürede"de boş. */
+  requestedAt?: string;
 }) {
   const { lines, lang, fulfillment, values, zip, city } = input;
 
@@ -131,6 +139,15 @@ export function toCreateOrderInput(input: {
     lines,
     lang,
     fulfillment,
+    paymentMethod: input.paymentMethod ?? "ONLINE",
+    couponCode: input.couponCode ?? "",
+    tipCents: input.tipCents ?? 0,
+    /*
+     * Boş dize hiç gönderilmez: sunucu şeması `requestedAt` alanını ISO tarih
+     * olarak doğruluyor ve boş dize o doğrulamayı düşürürdü. "En kısa sürede"
+     * demenin karşılığı, alanın hiç olmaması.
+     */
+    ...(input.requestedAt ? { requestedAt: input.requestedAt } : {}),
     customer: {
       name: values.name.trim(),
       phone: values.phone.trim(),

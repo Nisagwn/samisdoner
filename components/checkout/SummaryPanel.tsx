@@ -74,6 +74,32 @@ export function SummaryPanel({
             }
           />
         )}
+
+        {/*
+          İndirim eksi işaretle ve ayırt edici renkle. Kupon kodu etiketin
+          içinde: müşteri "hangi kod geçti" sorusunu özete bakarak
+          cevaplayabilmeli.
+        */}
+        {quote.discountCents > 0 && (
+          <SummaryRow
+            label={
+              quote.couponCode
+                ? `${t.orderFlow.summaryDiscount} · ${quote.couponCode}`
+                : t.orderFlow.summaryDiscount
+            }
+            value={`−${formatCents(quote.discountCents)}`}
+            tone="good"
+          />
+        )}
+
+        {/*
+          Bahşiş ayrı satır ve toplamın içinde; KDV dökümünün dışında
+          (Abschn. 10.1 Abs. 5 UStAE — bkz. lib/orders/tip.ts). Aşağıdaki KDV
+          notunun bahşişi kapsamaması bu yüzden doğru.
+        */}
+        {quote.tipCents > 0 && (
+          <SummaryRow label={t.orderFlow.summaryTip} value={formatCents(quote.tipCents)} />
+        )}
       </dl>
 
       <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
@@ -101,11 +127,20 @@ export function SummaryPanel({
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  /** "good": müşterinin lehine olan satır (indirim). */
+  tone?: "good";
+}) {
   return (
-    <div className="flex justify-between gap-3">
-      <dt>{label}</dt>
-      <dd className="font-mono tabular-nums">{value}</dd>
+    <div className={`flex justify-between gap-3 ${tone === "good" ? "text-herb" : ""}`}>
+      <dt className="min-w-0 truncate">{label}</dt>
+      <dd className="shrink-0 font-mono tabular-nums">{value}</dd>
     </div>
   );
 }

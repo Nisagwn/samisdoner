@@ -166,7 +166,39 @@ describe("istemci ile sunucu kuralları ayrışmıyor", () => {
     expect(body.address?.city).toBe("Straßkirchen");
   });
 
-  it("gövdeye fiyat alanı eklenmez", () => {
+  /*
+   * Gövdede **tek** para alanı vardır: bahşiş.
+   *
+   * Testin asıl sorusu değişmedi — "istemci fiyat gönderiyor mu". Cevap hâlâ
+   * hayır: satır fiyatı, ara toplam, ücret ve genel toplam gövdede yok ve
+   * hepsi sunucuda katalogtan hesaplanıyor. Bahşiş ise bir fiyat değil,
+   * müşterinin serbestçe belirlediği bir tutar; başka türlü öğrenilemez ve
+   * sunucuda `clampTip` ile kelepçelenir.
+   *
+   * Kupon da aynı mantıkla kod olarak gider, indirim tutarı olarak değil:
+   * indirimin kaç cent olduğuna kuralı okuyan sunucu karar verir.
+   */
+  it("gövdeye fiyat alanı eklenmez — bahşiş dışında para taşınmaz", () => {
+    const body = toCreateOrderInput({
+      lines,
+      lang: "de",
+      fulfillment: "DELIVERY",
+      values: form(),
+      zip: "94342",
+      city: "Straßkirchen",
+      couponCode: "DOENER10",
+      tipCents: 200,
+    });
+
+    const { tipCents, ...withoutTip } = body;
+    expect(tipCents).toBe(200);
+    expect(JSON.stringify(withoutTip)).not.toMatch(/price|total|cents/i);
+
+    // Kupon koddur, tutar değil: indirimi sunucu hesaplar.
+    expect(body.couponCode).toBe("DOENER10");
+  });
+
+  it("varsayılan ödeme yöntemi online, ön sipariş saati hiç gönderilmez", () => {
     const body = toCreateOrderInput({
       lines,
       lang: "de",
@@ -175,7 +207,55 @@ describe("istemci ile sunucu kuralları ayrışmıyor", () => {
       zip: "94342",
       city: "Straßkirchen",
     });
-    expect(JSON.stringify(body)).not.toMatch(/price|total|cents/i);
+
+    expect(body.paymentMethod).toBe("ONLINE");
+    // "En kısa sürede" demenin karşılığı, alanın hiç olmaması: boş dize
+    // sunucudaki ISO tarih doğrulamasını düşürürdü.
+    expect("requestedAt" in body).toBe(false);
+  });
+
+  it("seçilen ön sipariş saati gövdeye olduğu gibi girer", () => {
+    const body = toCreateOrderInput({
+      lines,
+      lang: "de",
+      fulfillment: "DELIVERY",
+      values: form(),
+      zip: "94342",
+      city: "Straßkirchen",
+      paymentMethod: "CASH",
+      requestedAt: "2026-09-15T18:30:00.000Z",
+    });
+
+    expect(body.paymentMethod).toBe("CASH");
+    expect(body).toHaveProperty("requestedAt", "2026-09-15T18:30:00.000Z");
+  });
+
+  /*
+   * İstemcinin ürettiği gövde, sunucu şemasından geçmeli. Bu iki taraf
+   * ayrışırsa müşteri, sunucunun reddedeceği bir siparişi gönderir ve hatayı
+   * ancak ödeme adımında öğrenir.
+   */
+  it("yeni alanlarla birlikte sunucu şemasından geçer", () => {
+    const body = toCreateOrderInput({
+      lines,
+      lang: "de",
+      fulfillment: "DELIVERY",
+      values: form(),
+      zip: "94342",
+      city: "Straßkirchen",
+      paymentMethod: "CARD_ON_DELIVERY",
+      couponCode: "DOENER10",
+      tipCents: 250,
+      requestedAt: "2026-09-15T18:30:00.000Z",
+    });
+
+    const parsed = createOrderSchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.paymentMethod).toBe("CARD_ON_DELIVERY");
+      expect(parsed.data.tipCents).toBe(250);
+      expect(parsed.data.couponCode).toBe("DOENER10");
+    }
   });
 });
 

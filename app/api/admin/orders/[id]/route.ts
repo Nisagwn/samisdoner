@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { badRequest, notFound, requireAdmin, storeWrite } from "@/lib/admin/guard";
-import { InvalidTransitionError, needsRefund } from "@/lib/orders/status";
+import { InvalidTransitionError } from "@/lib/orders/status";
 import { buildCancelReason } from "@/lib/orders/cancelReasons";
-import { delayOrderPromise, transitionOrder } from "@/lib/orders/repository";
-import { refundOrder } from "@/lib/orders/refund";
+import { advanceOrder } from "@/lib/orders/lifecycle";
+import { delayOrderPromise } from "@/lib/orders/repository";
 
 /**
  * Sipariş durumunu ilerletir, siparişi "görüldü" olarak işaretler, teslim
@@ -131,36 +131,30 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   try {
-    const order = await transitionOrder(params.id, parsed.data.status, "admin", {
-      reason,
-      ...(reason ? { meta: { cancelReason: reason } } : {}),
+    /*
+     * Geçiş `advanceOrder` üzerinden yapılır, doğrudan `transitionOrder` ile
+     * değil: durum değişiminin üç sonucu (kayıt, müşteriye bildirim,
+     * iptalde iade) her zaman birlikte olmalı. Aynı kapıdan müşterinin kendi
+     * iptali de geçiyor; "hangi yoldan iptal edildi" sorusu davranışı
+     * değiştirmesin (bkz. lib/orders/lifecycle.ts).
+     */
+    const { order, refund } = await advanceOrder(params.id, parsed.data.status, "admin", {
+      ...(reason ? { reason } : {}),
     });
 
-    /*
-     * İade.
-     *
-     * Durum değişiminden **sonra** çağrılır, bilinçli olarak: iade başarısız
-     * olursa sipariş iptal kalır ve panel bunu bildirir (elle tekrar
-     * denenebilir). Ters sırada olsaydı iade edilmiş ama hâlâ "hazırlanıyor"
-     * görünen bir sipariş oluşurdu — yemek çıkar, parası alınmamıştır.
-     *
-     * `needsRefund` ödeme alınmamış durumları eler: PENDING_PAYMENT ve
-     * EXPIRED siparişte iade edilecek para yok, sağlayıcıya gitmeye de gerek
-     * yok. Ölçüt geçişin **kaynağıdır**, hedefi değil.
-     */
-    if (cancelling && needsRefund(exists.status)) {
-      const refund = await refundOrder(order, reason ?? "", "admin");
-      if (refund.kind === "failed") {
-        // 200 değil: iptal oldu ama para dönmedi ve bu görülmeli.
-        return NextResponse.json(
-          {
-            error: `Sipariş iptal edildi ancak iade yapılamadı: ${refund.message}`,
-            status: order.status,
-            refunded: false,
-          },
-          { status: 502 }
-        );
-      }
+    if (refund?.kind === "failed") {
+      // 200 değil: iptal oldu ama para dönmedi ve bu görülmeli.
+      return NextResponse.json(
+        {
+          error: `Sipariş iptal edildi ancak iade yapılamadı: ${refund.message}`,
+          status: order.status,
+          refunded: false,
+        },
+        { status: 502 }
+      );
+    }
+
+    if (refund) {
       return NextResponse.json({
         ok: true,
         status: order.status,

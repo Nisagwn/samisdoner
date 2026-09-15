@@ -1,7 +1,14 @@
-import { Prisma, type Fulfillment, type OrderStatus } from "@prisma/client";
+import {
+  Prisma,
+  type Fulfillment,
+  type OrderStatus,
+  type PaymentMethod,
+} from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { buildVatBreakdown, type PricedLine, type VatBucket } from "@/lib/admin/store";
+import type { PricedLine, VatBucket } from "@/lib/admin/store";
+import { redeemCoupon } from "./coupon";
 import { InvalidTransitionError, canTransition } from "./status";
+import { composeTotals } from "./totals";
 
 /**
  * Sipariş kayıtlarının veritabanı katmanı.
@@ -69,6 +76,18 @@ export type CreateOrderData = {
   subtotalCents: number;
   serviceFeeCents: number;
   deliveryFeeCents: number;
+  /** Kupon indirimi (pozitif cent); kupon yoksa 0. */
+  discountCents: number;
+  /** Kabul edilen kuponun kodu; kupon yoksa boş. */
+  couponCode: string;
+  /** Bahşiş (pozitif cent). Toplama eklenir, KDV matrahına girmez. */
+  tipCents: number;
+  /**
+   * Ödeme yöntemi. ONLINE'da Stripe oturumu açılır; CASH ve
+   * CARD_ON_DELIVERY'de para kapıda alınır ve sipariş ödeme beklemeden
+   * mutfağa düşer (bkz. `placeOnSiteOrder`).
+   */
+  paymentMethod: PaymentMethod;
   fulfillment: Fulfillment;
   lang: string;
   customerName: string;
@@ -88,8 +107,14 @@ export type CreateOrderData = {
    * verilen söz değişmez.
    */
   etaMinutes: number | null;
-  /** Ödenmeyen sipariş bu andan sonra EXPIRED sayılır. */
-  expiresAt: Date;
+  /**
+   * Ödenmeyen sipariş bu andan sonra EXPIRED sayılır.
+   *
+   * Kapıda ödemede **null**: ödeme penceresi diye bir şey yok, sipariş
+   * beklenecek bir tahsilat olmadan mutfağa düşüyor. Bakım görevi de yalnızca
+   * `expiresAt` dolu olan PENDING_PAYMENT satırlarına bakar.
+   */
+  expiresAt: Date | null;
 };
 
 /**
@@ -99,14 +124,27 @@ export type CreateOrderData = {
  * fiyat hesaplamaz, yalnızca gelen tutarı dondurur.
  */
 export async function createOrder(data: CreateOrderData) {
-  const extraCents = data.serviceFeeCents + data.deliveryFeeCents;
-  const vatBreakdown: VatBucket[] = buildVatBreakdown(data.lines, extraCents);
-  const totalCents = data.subtotalCents + extraCents;
+  /*
+   * Toplam ve KDV dökümü, müşteriye gösterilen teklifle **aynı fonksiyondan**
+   * (`composeTotals`) çıkar. İki ayrı toplama işlemi olsaydı, kupon ya da
+   * bahşiş eklenirken biri güncellenip diğeri unutulabilir ve ekranda yazan
+   * tutarla tahsil edilen tutar sessizce ayrışabilirdi.
+   */
+  const totals = composeTotals({
+    lines: data.lines,
+    subtotalCents: data.subtotalCents,
+    serviceFeeCents: data.serviceFeeCents,
+    deliveryFeeCents: data.deliveryFeeCents,
+    discountCents: data.discountCents,
+    tipCents: data.tipCents,
+  });
+  const vatBreakdown: VatBucket[] = totals.vatBreakdown;
+  const totalCents = totals.totalCents;
 
   return prisma.$transaction(async (tx) => {
     const orderNo = await nextOrderNo(tx);
 
-    return tx.order.create({
+    const order = await tx.order.create({
       data: {
         orderNo,
         status: "PENDING_PAYMENT",
@@ -125,12 +163,15 @@ export async function createOrder(data: CreateOrderData) {
         note: data.note,
         requestedAt: data.requestedAt,
         etaMinutes: data.etaMinutes,
-        subtotalCents: data.subtotalCents,
-        serviceFeeCents: data.serviceFeeCents,
-        deliveryFeeCents: data.deliveryFeeCents,
+        subtotalCents: totals.subtotalCents,
+        serviceFeeCents: totals.serviceFeeCents,
+        deliveryFeeCents: totals.deliveryFeeCents,
+        discountCents: totals.discountCents,
+        couponCode: totals.discountCents > 0 ? data.couponCode : "",
+        tipCents: totals.tipCents,
         totalCents,
         vatBreakdown: vatBreakdown as unknown as Prisma.InputJsonValue,
-        paymentMethod: "ONLINE",
+        paymentMethod: data.paymentMethod,
         paymentStatus: "PENDING",
         expiresAt: data.expiresAt,
         lines: {
@@ -153,7 +194,41 @@ export async function createOrder(data: CreateOrderData) {
       },
       include: { lines: true },
     });
+
+    /*
+     * Kupon kullanımı **aynı işlemin içinde** yazılır.
+     *
+     * Kullanım sayılamıyorsa (kampanya bu arada tükendi, kupon kapatıldı)
+     * işlem baştan düşer ve sipariş hiç oluşmaz. Alternatifi, indirimi
+     * uygulanmış ama kullanımı sayılmamış bir sipariş bırakmaktı: 50
+     * kullanımlık bir kampanyanın 60 kez indirim yapması demek.
+     */
+    if (totals.discountCents > 0 && data.couponCode) {
+      const redeemed = await redeemCoupon(tx, {
+        code: data.couponCode,
+        orderId: order.id,
+        amountCents: totals.discountCents,
+      });
+      if (!redeemed) throw new CouponUnavailableError(data.couponCode);
+    }
+
+    return order;
   });
+}
+
+/**
+ * Sipariş yazılırken kuponun elden kaçtığını bildirir.
+ *
+ * Müşteri kodu girdiğinde geçerliydi; sipariş yazılana kadar geçen saniyelerde
+ * son kullanım hakkı başkasına gitti. Bu bir sunucu arızası değil, yarışın
+ * kaybeden tarafı: çağıran taraf müşteriye "kupon artık geçerli değil" der ve
+ * sepet kupon olmadan aynen durur.
+ */
+export class CouponUnavailableError extends Error {
+  constructor(readonly code: string) {
+    super(`Kupon kullanılamadı: ${code}`);
+    this.name = "CouponUnavailableError";
+  }
 }
 
 /* ------------------------------------------------------------------ okuma */
@@ -271,7 +346,7 @@ export async function markOrderPaid(input: {
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { orderNo: input.orderNo },
-      select: { id: true, status: true, email: true, etaMinutes: true },
+      select: { id: true, status: true, email: true, etaMinutes: true, requestedAt: true },
     });
     if (!order) throw new Error(`Sipariş bulunamadı: ${input.orderNo}`);
 
@@ -304,16 +379,14 @@ export async function markOrderPaid(input: {
      * `etaMinutes` boşsa (bölge süresi tanımsız) söz de verilmez: yanlış saat
      * söylemek, saat söylememekten kötüdür.
      */
-    const promisedAt =
-      order.etaMinutes && order.etaMinutes > 0
-        ? new Date(Date.now() + order.etaMinutes * 60_000)
-        : null;
+    const promisedAt = promiseFor(order);
 
     await tx.order.update({
       where: { id: order.id },
       data: {
         status: "PAID",
         paymentStatus: "PAID",
+        paidAt: new Date(),
         ...(promisedAt ? { promisedAt } : {}),
         // Müşteri formda e-posta vermediyse Stripe'ın topladığı adres yazılır.
         ...(order.email === "" && input.email ? { email: input.email } : {}),
@@ -338,6 +411,92 @@ export async function markOrderPaid(input: {
     include: orderInclude,
   });
   return { order, alreadyPaid: result.alreadyPaid };
+}
+
+/**
+ * Siparişe verilecek teslim sözü.
+ *
+ * İleri saatli siparişte (Vorbestellung) söz **müşterinin seçtiği saattir**:
+ * saat 15:00'te akşam 20:00'ye sipariş veren müşteriye "15:40'ta oradayız"
+ * demek anlamsız. Hemen teslimatta ise söz, ödemenin onaylandığı ana tahmini
+ * süre eklenerek kurulur — mutfağın saati parayı gördüğünde başlar.
+ *
+ * `etaMinutes` boşsa (bölge süresi tanımsız) söz de verilmez: yanlış saat
+ * söylemek, saat söylememekten kötüdür.
+ */
+function promiseFor(order: { etaMinutes: number | null; requestedAt: Date | null }): Date | null {
+  if (order.requestedAt) return order.requestedAt;
+  if (!order.etaMinutes || order.etaMinutes <= 0) return null;
+  return new Date(Date.now() + order.etaMinutes * 60_000);
+}
+
+/**
+ * Kapıda ödenecek siparişi mutfağa düşürür.
+ *
+ * NEDEN AYRI BİR YOL
+ *
+ * Nakit ve kapıda kart ödemesinde tahsilat teslim anında oluyor; beklenecek
+ * bir webhook, açılacak bir Stripe oturumu ve dolayısıyla `Payment` satırı
+ * yok. Ama siparişin geri kalanı birebir aynı: mutfak görmeli, müşteri takip
+ * edebilmeli, e-postalar gitmeli.
+ *
+ * Bu yüzden sipariş **durumu** PAID'e taşınır (akış olarak "alındı, kuyrukta"),
+ * ama **ödeme durumu** PENDING'te bırakılır: para henüz alınmadı ve muhasebe
+ * tarafında alınmış görünmemeli. İkisinin ayrı alanlar olması tam olarak bunun
+ * içindi.
+ *
+ * İdempotency `markOrderPaid` ile aynı kuralda: sipariş zaten PENDING_PAYMENT
+ * değilse hiçbir şey yazılmaz ve `alreadyPlaced` ile dönülür. Çift tıklanan
+ * bir düğme mutfağa iki fiş basmaz.
+ */
+export async function placeOnSiteOrder(input: {
+  orderNo: string;
+  method: PaymentMethod;
+  actor: string;
+}): Promise<{ order: OrderWithDetails; alreadyPlaced: boolean }> {
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { orderNo: input.orderNo },
+      select: { id: true, status: true, etaMinutes: true, requestedAt: true },
+    });
+    if (!order) throw new Error(`Sipariş bulunamadı: ${input.orderNo}`);
+
+    if (order.status !== "PENDING_PAYMENT") return { id: order.id, alreadyPlaced: true };
+
+    const promisedAt = promiseFor(order);
+
+    await tx.order.update({
+      where: { id: order.id },
+      data: {
+        status: "PAID",
+        paymentMethod: input.method,
+        // Para kapıda alınacak: ödeme durumu beklemede kalır.
+        paymentStatus: "PENDING",
+        paidAt: new Date(),
+        ...(promisedAt ? { promisedAt } : {}),
+        // Ödeme penceresi yok; bakım görevi bu siparişi süresi dolmuş sayamaz.
+        expiresAt: null,
+      },
+    });
+
+    await tx.orderEvent.create({
+      data: {
+        orderId: order.id,
+        from: "PENDING_PAYMENT",
+        to: "PAID",
+        actor: input.actor,
+        meta: { paymentMethod: input.method, settlement: "on_site" },
+      },
+    });
+
+    return { id: order.id, alreadyPlaced: false };
+  });
+
+  const order = await prisma.order.findUniqueOrThrow({
+    where: { id: result.id },
+    include: orderInclude,
+  });
+  return { order, alreadyPlaced: result.alreadyPlaced };
 }
 
 /**

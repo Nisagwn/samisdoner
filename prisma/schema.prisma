@@ -203,7 +203,6 @@ model OptionChoice {
 
 /**
  * ─────────────────────────────────────── döner yapılandırıcı (KULLANIM DIŞI)
- *
  * "Kendin Seç" bölümü siteden ve panelden kaldırıldı: müşteri dönerini
  * malzeme malzeme kurmak yerine menüden sipariş ediyor. Aşağıdaki iki tablo
  * ve `BuilderMode` enum'u **silinmedi** — girilmiş seçenek/ek ücret verisi
@@ -349,18 +348,34 @@ model Order {
   promisedAt DateTime?
 
   subtotalCents    Int
-  deliveryFeeCents Int @default(0)
-  serviceFeeCents  Int @default(0)
+  deliveryFeeCents Int    @default(0)
+  serviceFeeCents  Int    @default(0)
+  /// Kupon indirimi (pozitif cent). Toplamdan DÜŞÜLÜR ve KDV matrahını da
+  /// düşürür — indirim, satılan yemeğin bedelini azaltır.
+  discountCents    Int    @default(0)
+  /// Kullanılan kuponun kodu, sipariş anındaki hâliyle. Kupon sonradan
+  /// silinse bile faturada hangi kodun uygulandığı okunabilmeli.
+  couponCode       String @default("")
+  /// Bahşiş (pozitif cent). Toplama EKLENİR ama KDV matrahına GİRMEZ:
+  /// Abschn. 10.1 Abs. 5 UStAE uyarınca personele gönüllü verilen bahşiş
+  /// işletmenin edimi için ödenen bedelin parçası değildir. Bkz. lib/orders/tip.ts.
+  tipCents         Int    @default(0)
   totalCents       Int
 
   /// Orana göre net/KDV/brüt dökümü, sipariş anında DONDURULUR.
   /// [{ rate: 7, netCents, vatCents, grossCents }, { rate: 19, ... }]
+  /// Brüt toplamı `totalCents - tipCents` ile eşittir (bahşiş vergiye girmez).
   vatBreakdown Json
 
   paymentMethod PaymentMethod @default(ONLINE)
   paymentStatus PaymentStatus @default(PENDING)
 
   createdAt      DateTime  @default(now())
+  /// Siparişin mutfağa düştüğü an: online ödemede paranın onaylandığı,
+  /// kapıda ödemede siparişin verildiği an. İptal penceresi bu ana bakar
+  /// (bkz. lib/orders/cancelWindow.ts); `Payment.paidAt` kapıda ödemede
+  /// hiç dolmadığı için ayrı bir alan gerekiyor.
+  paidAt         DateTime?
   /// Panelde "Onayla"ya basıldığı an — sesli uyarı bundan sonra susar.
   acknowledgedAt DateTime?
   acceptedAt     DateTime?
@@ -371,9 +386,11 @@ model Order {
   /// Ödenmeyen sipariş bu saatten sonra EXPIRED'a düşer.
   expiresAt      DateTime?
 
-  lines    OrderLine[]
-  events   OrderEvent[]
-  payments Payment[]
+  lines      OrderLine[]
+  events     OrderEvent[]
+  payments   Payment[]
+  /// Kupon kullanıldıysa tek satır. Sipariş başına en fazla bir kupon.
+  redemption CouponRedemption?
 
   @@index([status, createdAt])
   @@index([createdAt])
@@ -484,6 +501,76 @@ model WebhookEvent {
 model OrderCounter {
   day String @id
   seq Int    @default(0)
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════ kupon
+ */
+
+/// İndirim kuponu (Gutscheincode).
+///
+/// Kural tablosudur, para kasası değil: burada bir bakiye tutulmaz. Her sipariş
+/// kendi indirimini kupon kuralından **yeniden hesaplar** ve hesaplanan tutar
+/// siparişe kopyalanır (`Order.discountCents`). Kupon yarın değişse ya da
+/// silinse bile dün verilen siparişin indirimi değişmez — sipariş satırındaki
+/// fiyat kopyası kuralının aynısı.
+///
+/// Kod **büyük harfe indirgenmiş** hâliyle saklanır: "doener10" ve "DOENER10"
+/// aynı kupondur, müşteri kodu e-postadan kopyalarken harf durumuyla
+/// uğraşmasın.
+model Coupon {
+  id   String     @id @default(cuid())
+  code String     @unique
+  kind CouponKind
+
+  /// PERCENT'te yüzde (1–100), FIXED'de cent. İki anlamı tek alanda taşımak
+  /// bilinçli: her iki durumda da "kuponun büyüklüğü" budur ve doğrulama
+  /// `kind`'a bakarak yapılır (bkz. lib/orders/coupon.ts).
+  value Int
+
+  /// Kuponun geçerli olduğu asgari ara toplam. 0 = eşik yok.
+  minOrderCents    Int @default(0)
+  /// Yüzde kuponunda indirimin üst sınırı (cent). 0 = sınırsız.
+  /// Sabit tutarlı kuponda anlamsızdır ve okunmaz.
+  maxDiscountCents Int @default(0)
+
+  /// Yalnızca bu teslim biçiminde geçerli; null = ikisinde de.
+  /// "Gel-al'a %10" gibi kampanyalar kod değil, veri olsun diye.
+  fulfillment Fulfillment?
+
+  startsAt  DateTime?
+  expiresAt DateTime?
+
+  /// Toplam kullanım sınırı. 0 = sınırsız.
+  maxRedemptions Int @default(0)
+  /// Kullanım sayacı. `CouponRedemption` satırlarından sayılabilirdi ama
+  /// sipariş oluşturma sırasında tek bir koşullu UPDATE ile sınırı yarışsız
+  /// uygulayabilmek için burada da tutulur.
+  redeemedCount  Int @default(0)
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  redemptions CouponRedemption[]
+}
+
+/// Kuponun bir siparişte kullanılması.
+///
+/// Denetim izidir: hangi kupon hangi siparişte kaç cent indirim yaptı. Sipariş
+/// başına tekil kısıt, aynı siparişe ikinci bir kupon yazılmasını veritabanı
+/// seviyesinde imkânsız kılar.
+model CouponRedemption {
+  id       String @id @default(cuid())
+  couponId String
+  coupon   Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  orderId  String @unique
+  order    Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// Uygulanan indirim (cent), sipariş anındaki hâliyle.
+  amountCents Int
+  createdAt   DateTime @default(now())
+
+  @@index([couponId, createdAt])
 }
 
 /**
@@ -670,6 +757,14 @@ enum LineKind {
 enum Fulfillment {
   DELIVERY
   PICKUP
+}
+
+/// Kuponun indirimi nasıl hesapladığı.
+enum CouponKind {
+  /// `value` yüzdedir (1–100); ara toplamdan o oranda indirilir.
+  PERCENT
+  /// `value` cent'tir; sabit tutar indirilir.
+  FIXED
 }
 
 enum OrderStatus {

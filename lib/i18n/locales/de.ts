@@ -469,4 +469,101 @@ export const deTranslations: Translations = {
       zipHint: "Die PLZ wählst du an der Kasse.",
     },
   },
+  /*
+   * ───────────────────────────────── ödeme akışı: zamanlama, bahşiş, kupon
+   *
+   * Ayrı blok; gerekçesi tr.ts içindeki eşinde yazılı.
+   *
+   * Bahşiş metni bilinçli olarak "unser Team" der, "wir" demez: Abschn. 10.1
+   * Abs. 5 UStAE'ye göre bahşişin KDV dışında kalması, paranın **personele**
+   * gitmesine bağlı. İşletmeye verilen bahşiş vergiye girer. Metin, hesabın
+   * yaptığı şeyi anlatmak zorunda.
+   */
+  orderFlow: {
+    /* --- Vorbestellung --- */
+    timingTitle: "Wann soll geliefert werden?",
+    timingAsap: "So schnell wie möglich",
+    timingAsapHint: "ca. {minutes} Min.",
+    timingScheduled: "Für später vorbestellen",
+    timingSlotLabel: "Wunschzeit",
+    timingSlotPlaceholder: "Uhrzeit wählen",
+    timingNoSlots: "Für heute sind keine Zeiten mehr verfügbar.",
+    timingClosedHint:
+      "Wir haben gerade geschlossen — Sie können aber für eine spätere Uhrzeit vorbestellen.",
+
+    /* --- Zahlungsart --- */
+    paymentTitle: "Wie möchten Sie bezahlen?",
+    paymentOnline: "Online bezahlen",
+    paymentOnlineHint: "PayPal, Karte, Apple Pay und Google Pay — sicher über Stripe.",
+    paymentCash: "Barzahlung bei Lieferung",
+    paymentCashHint: "Sie zahlen bei der Übergabe. Bitte halten Sie es möglichst passend bereit.",
+    paymentCashPickupHint: "Sie zahlen bei der Abholung im Laden.",
+    paymentCard: "Kartenzahlung bei Lieferung",
+    paymentCardHint: "Unser Fahrer bringt ein Kartenlesegerät mit.",
+    paymentCardPickupHint: "Sie zahlen mit Karte bei der Abholung im Laden.",
+
+    /* --- Trinkgeld --- */
+    tipTitle: "Trinkgeld für unser Team",
+    tipHint: "Ganz freiwillig — das Trinkgeld geht vollständig an unsere Mitarbeiter.",
+    tipNone: "Kein",
+    tipCustom: "Eigener Betrag",
+    tipCustomLabel: "Trinkgeld (€)",
+    tipMaxHint: "Höchstens {amount} möglich.",
+
+    /* --- Gutscheincode --- */
+    couponTitle: "Haben Sie einen Gutscheincode?",
+    couponLabel: "Gutscheincode",
+    couponPlaceholder: "z. B. DOENER10",
+    couponApply: "Einlösen",
+    couponRemove: "Entfernen",
+    couponApplied: "{code} eingelöst",
+    couponChecking: "Wird geprüft…",
+
+    /* --- Gutschein: Ablehnungsgründe --- */
+    couponUnknown: "Dieser Code ist ungültig. Bitte prüfen Sie die Eingabe.",
+    couponInactive: "Diese Aktion ist derzeit nicht aktiv.",
+    couponNotStarted: "Diese Aktion hat noch nicht begonnen.",
+    couponExpired: "Dieser Code ist abgelaufen.",
+    couponExhausted: "Dieser Code wurde bereits vollständig eingelöst.",
+    couponWrongDelivery: "Dieser Code gilt nur für Lieferbestellungen.",
+    couponWrongPickup: "Dieser Code gilt nur für Abholbestellungen.",
+    couponBelowMinimum: "Dieser Code gilt ab einem Bestellwert von {amount}.",
+    couponGone:
+      "Dieser Code wurde soeben zum letzten Mal eingelöst. Bitte entfernen Sie ihn und bestellen Sie erneut.",
+
+    /* --- Übersicht --- */
+    summaryDiscount: "Rabatt",
+    summaryTip: "Trinkgeld",
+    summaryPreOrder: "Wunschzeit",
+
+    /* --- Fehler --- */
+    errSlotUnavailable: "Die gewählte Uhrzeit ist nicht mehr verfügbar. Bitte wählen Sie eine neue.",
+    errPaymentMethod: "Die gewählte Zahlungsart ist derzeit nicht verfügbar.",
+
+    /* --- Bestellverfolgung: Stornierung --- */
+    cancelTitle: "Bestellung stornieren",
+    cancelHint: "Solange die Küche die Bestellung noch nicht angenommen hat, können Sie stornieren.",
+    cancelUntil: "Stornierung möglich bis {time}.",
+    cancelConfirm:
+      "Sind Sie sicher? Die Bestellung wird storniert und der Betrag vollständig erstattet.",
+    cancelConfirmYes: "Ja, stornieren",
+    cancelConfirmNo: "Abbrechen",
+    cancelPending: "Wird storniert…",
+    cancelDone: "Ihre Bestellung wurde storniert.",
+    cancelTooLate:
+      "Die Küche hat Ihre Bestellung bereits angenommen — bitte rufen Sie uns kurz an.",
+    cancelFailed: "Die Bestellung konnte nicht storniert werden. Bitte rufen Sie uns an.",
+    cancelRefundFailed:
+      "Die Bestellung wurde storniert, die Erstattung konnte aber nicht abgeschlossen werden. Bitte rufen Sie uns an — der Betrag wird auf jeden Fall erstattet.",
+
+    /* --- Bestellverfolgung: Verlauf --- */
+    timelineTitle: "Bestellverlauf",
+    timelineRefunded: "Betrag erstattet",
+    timelineDelayed: "Lieferzeit um {minutes} Min. verschoben",
+    paymentDue: "Zahlung bei Übergabe",
+    paymentDueCash: "Bar bei Lieferung zu zahlen: {amount}",
+    paymentDueCard: "Mit Karte bei Lieferung zu zahlen: {amount}",
+    paymentDuePickupCash: "Bar bei Abholung zu zahlen: {amount}",
+    paymentDuePickupCard: "Mit Karte bei Abholung zu zahlen: {amount}",
+  },
 };
