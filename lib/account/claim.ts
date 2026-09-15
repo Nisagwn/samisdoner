@@ -94,3 +94,101 @@ export async function claimGuestOrder(
   await prisma.order.update({ where: { id: order.id }, data: { customerId } });
   return { ok: true, orderNo: order.orderNo };
 }
+
+
+/**
+ * Kayıt/giriş sonrası kendiliğinden bağlama.
+ *
+ * Elle "hesabıma ekle" adımı duruyor ve duracak — sipariş numarasını elinde
+ * tutan herkes onu kullanabilmeli. Ama o adımı bulan müşteri az; çoğu kişi
+ * hesabını açar, geçmişini boş görür ve bir daha bakmaz.
+ *
+ * Burada kullanıcıdan hiçbir şey istenmediği için ölçüt elle bağlamadan
+ * **daha dar**: e-posta ile telefon aynı anda tutmalı. Tek başına e-posta
+ * yeterli olsaydı, ortak bir aile adresiyle verilmiş siparişler yanlış hesaba
+ * düşerdi; tek başına telefon yeterli olsaydı, numarasını değiştiren birinin
+ * eski numarasını alan kişi onun geçmişini devralırdı.
+ *
+ * Telefon karşılaştırması veritabanında yapılamıyor (normalize edilmesi
+ * gerekiyor), bu yüzden aday siparişler e-postayla çekilip bellekte eleniyor.
+ * Aday sayısı doğası gereği küçük: tek bir e-posta adresine ait misafir
+ * siparişleri.
+ */
+export async function autoClaimGuestOrders(
+  customerId: string,
+  email: string,
+  phone: string
+): Promise<number> {
+  const wanted = normalizePhone(phone);
+  if (!email || wanted.length < 6) return 0;
+
+  const candidates = await prisma.order.findMany({
+    where: {
+      customerId: null,
+      email: { equals: email.toLowerCase(), mode: "insensitive" },
+    },
+    select: { id: true, phone: true },
+    // Üst sınır, bir hata durumunda sınırsız yazma yapılmasını engeller.
+    take: 50,
+  });
+
+  const matching = candidates
+    .filter((order) => normalizePhone(order.phone) === wanted)
+    .map((order) => order.id);
+  if (matching.length === 0) return 0;
+
+  /*
+   * `customerId: null` koşulu güncellemenin kendi `where`'inde duruyor: aday
+   * listesi çekildikten sonra o siparişlerden biri başka bir hesaba bağlanmış
+   * olabilir ve bağlı bir sipariş hiçbir koşulda el değiştirmemeli.
+   */
+  const result = await prisma.order.updateMany({
+    where: { id: { in: matching }, customerId: null },
+    data: { customerId },
+  });
+  return result.count;
+}
+
+/**
+ * Takip bağlantısıyla bağlama.
+ *
+ * Takip jetonu, sipariş numarasının HMAC ile imzalanmış hâlidir
+ * (bkz. lib/orders/token.ts) ve yalnızca siparişi veren kişiye — onay
+ * e-postasıyla ya da ödeme sonrası yönlendirmeyle — ulaşır. Yani jeton,
+ * numara + telefon çiftinden **daha güçlü** bir sahiplik kanıtı: tahmin
+ * edilemez ve imzasız üretilemez.
+ *
+ * Bu yüzden burada telefon sorulmaz. Müşteri zaten kendi siparişinin takip
+ * sayfasına bakıyor; ona "şimdi de telefon numaranı yaz" demek, elindeki
+ * kanıtı yok sayıp daha zayıfını istemek olurdu.
+ *
+ * Jetonun doğrulanması **çağıranın işidir**: bu fonksiyon doğrulanmış bir
+ * sipariş numarası bekler. Ayrım bilinçli — jeton doğrulaması sipariş
+ * alanının sorumluluğunda ve buraya kopyalanmamalı.
+ */
+export async function claimVerifiedOrder(
+  customerId: string,
+  orderNo: string
+): Promise<ClaimResult> {
+  const order = await prisma.order.findUnique({
+    where: { orderNo },
+    select: { id: true, orderNo: true, customerId: true },
+  });
+  if (!order) return { ok: false, reason: "not_found" };
+
+  if (order.customerId) {
+    return order.customerId === customerId
+      ? { ok: true, orderNo: order.orderNo }
+      : { ok: false, reason: "already_claimed" };
+  }
+
+  // `customerId: null` koşulu güncellemenin kendi `where`'inde: okuma ile
+  // yazma arasında sipariş başka bir hesaba bağlanmış olabilir.
+  const claimed = await prisma.order.updateMany({
+    where: { id: order.id, customerId: null },
+    data: { customerId },
+  });
+  if (claimed.count === 0) return { ok: false, reason: "already_claimed" };
+
+  return { ok: true, orderNo: order.orderNo };
+}

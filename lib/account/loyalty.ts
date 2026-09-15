@@ -60,6 +60,36 @@ export type StampCard = {
   }[];
 };
 
+/**
+ * Kartın aritmetiği — veritabanısız, bu yüzden sınanabilir.
+ *
+ * `delivered` teslim edilmiş toplam sipariş sayısı, `consumed` ise daha önce
+ * ödüle çevrilmiş olanların sayısı (`throughOrderCount`'ların en büyüğü).
+ * İkisinin farkı karttaki ham damga sayısıdır; bundan kaç tam kart çıktığı ve
+ * geriye kaç damga kaldığı burada hesaplanır.
+ *
+ * Fonksiyonun ayrı durmasının sebebi test değil, **doğruluğun görülebilir
+ * olması**: "kaç ödül açılmalı" sorusu bir veritabanı çağrısının içine
+ * gömüldüğünde, yirmi beş teslimatı olan bir müşteride iki ödül yerine bir
+ * tane açan bir hata gözle fark edilmez.
+ */
+export function stampMath(
+  delivered: number,
+  consumed: number,
+  perReward: number = STAMPS_PER_REWARD
+): { stamps: number; rewardsToIssue: number; throughAfter: number } {
+  // Negatif fark mümkün olmamalı ama bir veri düzeltmesi sonrası olabilir;
+  // eksi damga göstermektense sıfırda durmak doğru.
+  const raw = Math.max(0, delivered - consumed);
+  const rewardsToIssue = Math.floor(raw / perReward);
+
+  return {
+    stamps: raw % perReward,
+    rewardsToIssue,
+    throughAfter: consumed + rewardsToIssue * perReward,
+  };
+}
+
 /** "SD-7K4M-2QX9" — tezgâhta okunacağı için karışan harfler alfabede yok. */
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -105,7 +135,7 @@ export async function getStampCard(customerId: string): Promise<StampCard> {
     0
   );
 
-  let stamps = delivered - consumed;
+  const math = stampMath(delivered, consumed);
   const issued: typeof rewards = [];
 
   /*
@@ -115,9 +145,8 @@ export async function getStampCard(customerId: string): Promise<StampCard> {
    * sessizce silmek olurdu.
    */
   let through = consumed;
-  while (stamps >= STAMPS_PER_REWARD) {
+  for (let i = 0; i < math.rewardsToIssue; i++) {
     through += STAMPS_PER_REWARD;
-    stamps -= STAMPS_PER_REWARD;
 
     const reward = await prisma.loyaltyReward.create({
       data: {
@@ -143,8 +172,8 @@ export async function getStampCard(customerId: string): Promise<StampCard> {
   );
 
   return {
-    stamps,
-    remaining: STAMPS_PER_REWARD - stamps,
+    stamps: math.stamps,
+    remaining: STAMPS_PER_REWARD - math.stamps,
     perReward: STAMPS_PER_REWARD,
     rewards: open.map((reward) => ({
       code: reward.code,

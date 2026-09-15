@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequest, requirePermission, storeWrite } from "@/lib/admin/guard";
 import { can } from "@/lib/admin/roles";
+import { validateOpeningHours } from "@/lib/admin/schedule";
 import {
   getBusinessSettings,
   replaceOpeningHours,
@@ -135,6 +136,23 @@ export async function PATCH(request: Request) {
   }
 
   if (body.section === "hours") {
+    /*
+     * Çakışan ve sıfır uzunlukta aralıklar kaydedilmez.
+     *
+     * Şemadaki `refine` yalnızca tek bir satıra bakabiliyor (açılış ≠ kapanış);
+     * "Salı 11:00–15:00" ile "Salı 14:00–21:00" arasındaki çakışma ancak
+     * satırlar birlikte görüldüğünde anlaşılır. Bu ekrandaki hata sessizdir —
+     * kimse "bugün neden sipariş gelmedi" diye çalışma saatlerine bakmaz.
+     */
+    const problems = validateOpeningHours(
+      body.rows.map((row) => ({
+        weekday: row.weekday,
+        openMinute: row.open,
+        closeMinute: row.close,
+      }))
+    );
+    if (problems.length > 0) return badRequest(problems[0].message);
+
     const result = await storeWrite(() =>
       replaceOpeningHours(
         body.rows.map((row) => ({

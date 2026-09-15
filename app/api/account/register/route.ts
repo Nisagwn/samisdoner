@@ -9,6 +9,9 @@ import {
 } from "@/lib/account/session";
 import { checkThrottle, clientIp, recordFailure, throttleKeys } from "@/lib/security/throttle";
 import { withDatabase } from "@/lib/security/dbGuard";
+import { createEmailVerificationToken } from "@/lib/account/emailVerification";
+import { sendEmailVerificationMail } from "@/lib/mail/account";
+import { autoClaimGuestOrders } from "@/lib/account/claim";
 
 /**
  * Hesap açma.
@@ -71,6 +74,53 @@ export async function POST(request: Request) {
         },
         { status: 409 }
       );
+    }
+
+    /*
+     * Doğrulama bağlantısı kayıt anında gider.
+     *
+     * Gönderim **beklenmez ve başarısızlığı kaydı düşürmez**: Resend anahtarı
+     * yoksa ya da sağlayıcı hata verirse hesap yine açılmış olur ve kullanıcı
+     * bağlantıyı ayarlar ekranından yeniden isteyebilir. Bir bildirim hatası
+     * yüzünden açılmış bir hesabı geri almak kabul edilemez.
+     *
+     * Doğrulama sipariş vermenin önkoşulu değil (bkz. şemadaki not): tek işi,
+     * parola sıfırlamanın güvenilir bir adrese gitmesini sağlamak.
+     */
+    try {
+      const token = await createEmailVerificationToken(
+        result.customer.id,
+        result.customer.email
+      );
+      await sendEmailVerificationMail({
+        to: result.customer.email,
+        name: result.customer.name,
+        token,
+      });
+    } catch (error) {
+      console.error("[account] doğrulama e-postası gönderilemedi", error);
+    }
+
+    /*
+     * Misafirken verilmiş siparişleri hesaba bağla.
+     *
+     * Kayıt olan kişinin e-postası ve telefonu, o gün misafir olarak verdiği
+     * siparişte de yazıyor olabilir. Bu siparişleri elle "hesabıma ekle"
+     * adımına bırakmak, çoğu müşterinin geçmişini boş görmesi demek — ve o
+     * adımı bulan da zaten az.
+     *
+     * Eşleşme iki alanın **birden** tutmasını ister (bkz. lib/account/claim.ts);
+     * burada kullanıcıdan hiçbir şey istenmediği için ölçüt daha da dar:
+     * e-posta ile telefon aynı anda tutmalı.
+     */
+    try {
+      await autoClaimGuestOrders(
+        result.customer.id,
+        result.customer.email,
+        result.customer.phone
+      );
+    } catch (error) {
+      console.error("[account] misafir siparişleri bağlanamadı", error);
     }
 
     const response = NextResponse.json({

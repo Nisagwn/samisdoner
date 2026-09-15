@@ -24,6 +24,7 @@ import { PaymentSync } from "./PaymentSync";
 import { ClearCart } from "./ClearCart";
 import { ReorderButton } from "./OrderActions";
 import { CancelOrder } from "./CancelOrder";
+import ClaimOrder from "./ClaimOrder";
 
 /**
  * Misafir sipariş takip sayfası.
@@ -62,7 +63,17 @@ export default async function OrderTrackingPage({ params }: Params) {
    * Siparişin sahibi olup olmadığı sorulmaz: bağlantı hesabın kendi sipariş
    * listesine gider, bu sayfaya değil. Yanlış bir şey sızdırmaz.
    */
-  const loggedIn = (await getCurrentCustomer()) !== null;
+  const viewer = await getCurrentCustomer();
+  const loggedIn = viewer !== null;
+
+  /*
+   * "Hesabıma ekle" yalnızca misafir siparişinde anlamlı.
+   *
+   * Sipariş zaten bir hesaba bağlıysa (kendisininkine ya da başkasınınkine)
+   * gösterilecek bir iş yok. Karar burada, sunucuda: düğmeyi gizlemek yetki
+   * kontrolü değil ama görünmemesi gereken bir düğmeyi çizmemek de doğru.
+   */
+  const claimable = loggedIn && order.customerId === null;
 
   // Akışı bitmiş siparişte asıl işlem tekrar sipariş vermektir; süren
   // siparişte müşteri zaten bekliyor, ona menüyü göstermenin acelesi yok.
@@ -238,6 +249,14 @@ export default async function OrderTrackingPage({ params }: Params) {
               {t.toMenu}
             </ActionLink>
             {loggedIn && <ActionLink href="/konto">{t.myOrders}</ActionLink>}
+            {claimable && (
+              <ClaimOrder
+                token={token}
+                label={t.claimToAccount}
+                doneLabel={t.claimDone}
+                errorLabel={t.claimFailed}
+              />
+            )}
             <ActionLink href="/">{t.backHome}</ActionLink>
 
             {/*
@@ -556,6 +575,9 @@ const texts = {
     next: "Wie weiter?",
     toMenu: "Zur Speisekarte",
     myOrders: "Meine Bestellungen",
+    claimToAccount: "Zu meinem Konto hinzufügen",
+    claimDone: "Diese Bestellung gehört jetzt zu Ihrem Konto.",
+    claimFailed: "Das hat nicht geklappt — erneut versuchen?",
     orderAgain: "Erneut bestellen",
     addedToCart: "Im Warenkorb",
     backHome: "Zur Startseite",
@@ -582,6 +604,9 @@ const texts = {
     next: "Şimdi ne yapmak istersiniz?",
     toMenu: "Menüye git",
     myOrders: "Siparişlerim",
+    claimToAccount: "Hesabıma ekle",
+    claimDone: "Bu sipariş artık hesabınıza ait.",
+    claimFailed: "Olmadı — tekrar denensin mi?",
     orderAgain: "Tekrar sipariş ver",
     addedToCart: "Sepete eklendi",
     backHome: "Ana sayfaya dön",
