@@ -21,13 +21,21 @@ import { accountTexts } from "./texts";
  * girmeden ne bulacağını söyler.
  */
 
-export type AccountNavKey = "overview" | "orders" | "addresses" | "favorites" | "settings";
+export type AccountNavKey =
+  | "overview"
+  | "orders"
+  | "addresses"
+  | "favorites"
+  | "reviews"
+  | "settings";
 
 export type AccountSummary = {
   orderCount: number;
   activeOrderCount: number;
   addressCount: number;
   favoriteCount: number;
+  /** Değerlendirilmeyi bekleyen sipariş sayısı. */
+  pendingReviewCount: number;
 };
 
 export default function AccountShell({
@@ -67,6 +75,15 @@ export default function AccountShell({
       href: "/konto/favoriten",
       label: t.navFavorites,
       badge: summary.favoriteCount,
+    },
+    /* Rozet **bekleyen** değerlendirme sayısıdır, yazılmış olanların değil:
+       satırın işaretli durması bir iş olduğunu söylemeli, bir arşivin
+       büyüklüğünü değil. */
+    {
+      key: "reviews",
+      href: "/konto/bewertungen",
+      label: t.navReviews,
+      badge: summary.pendingReviewCount,
     },
     { key: "settings", href: "/konto/einstellungen", label: t.navSettings },
   ];

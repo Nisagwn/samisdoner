@@ -64,6 +64,14 @@ export const CACHE_KEYS = {
   closures: "closures",
   /** Teslimat bölgeleri listesi. */
   zones: "zones",
+  /**
+   * Yayındaki değerlendirmeler ve ortalama puan.
+   *
+   * Ana sayfada ve "Hakkımızda" sayfasında görünür, yani neredeyse her
+   * ziyarette okunur; değişmesi ise günde birkaç kez. Önbelleğe tam olarak
+   * uyan iş yükü bu.
+   */
+  reviews: "reviews",
 } as const;
 
 export type CacheKey = (typeof CACHE_KEYS)[keyof typeof CACHE_KEYS];

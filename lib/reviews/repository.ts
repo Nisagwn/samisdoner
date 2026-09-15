@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { CACHE_KEYS, cached, invalidate } from "@/lib/cache";
 import {
   REVIEW_WINDOW_DAYS,
   asksDeliveryRating,
@@ -177,6 +178,8 @@ export async function submitReview(
         lang: order.lang,
       },
     });
+    // Yeni yorum ortalamayı değiştirir; site bayat bir sayı göstermesin.
+    await invalidateReviews();
     return { ok: true };
   } catch (error) {
     // Aynı siparişe iki sekmeden aynı anda gönderilen iki form: UNIQUE kısıt
@@ -240,6 +243,35 @@ export type ReviewSummary = {
  * görünmez**: gösterilecek bir cümlesi yoktur, ama verdiği puan gerçek bir
  * müşterinin gerçek puanıdır ve saymamak ortalamayı çarpıtır.
  */
+/** Önbellek ömrü. Yeni bir yorumun sitede görünmesi için beş dakika yeter. */
+const SUMMARY_TTL_SECONDS = 300;
+
+/**
+ * Önbellekli özet — sitenin okuduğu tek yol.
+ *
+ * Yorum yazıldığında ya da panelden gizlendiğinde anahtar düşürülür
+ * (`invalidateReviews`), dolayısıyla beş dakika bir üst sınırdır, gecikmenin
+ * kendisi değil.
+ */
+export async function getPublicReviews(limit = 8): Promise<ReviewSummary> {
+  return cached(`${CACHE_KEYS.reviews}:${limit}`, SUMMARY_TTL_SECONDS, () =>
+    getReviewSummary(limit)
+  );
+}
+
+/**
+ * Önbelleği düşürür.
+ *
+ * Liste uzunluğu anahtarın parçası olduğu için birkaç varyant oluşabilir;
+ * hepsi tek tek düşürülür. Kullanılan uzunluklar sabit ve az — dinamik bir
+ * desen silme (Redis `SCAN`) buradaki üç anahtar için fazla ağır olurdu.
+ */
+export async function invalidateReviews(): Promise<void> {
+  await invalidate(
+    ...[4, 6, 8, 12, 24].map((limit) => `${CACHE_KEYS.reviews}:${limit}`)
+  );
+}
+
 export async function getReviewSummary(limit = 8): Promise<ReviewSummary> {
   const rows = await prisma.review.findMany({
     where: { published: true },
@@ -324,7 +356,7 @@ export async function replyToReview(
   const exists = await prisma.review.findUnique({ where: { id }, select: { id: true } });
   if (!exists) return null;
 
-  return prisma.review.update({
+  const updated = await prisma.review.update({
     where: { id },
     data: reply
       ? { reply, repliedAt: new Date(), repliedBy: actor }
@@ -345,6 +377,11 @@ export async function replyToReview(
       createdAt: true,
     },
   });
+
+  // Cevap sitede yorumun altında görünür: önbellek düşmezse beş dakika
+  // boyunca cevapsız görünmeye devam eder.
+  await invalidateReviews();
+  return updated;
 }
 
 /**
@@ -363,7 +400,7 @@ export async function setReviewVisibility(
   const exists = await prisma.review.findUnique({ where: { id }, select: { id: true } });
   if (!exists) return null;
 
-  return prisma.review.update({
+  const updated = await prisma.review.update({
     where: { id },
     data: { published, hiddenReason: published ? "" : hiddenReason },
     select: {
@@ -382,4 +419,8 @@ export async function setReviewVisibility(
       createdAt: true,
     },
   });
+
+  // Görünürlük değişimi hem listeyi hem de ortalamayı etkiler.
+  await invalidateReviews();
+  return updated;
 }
