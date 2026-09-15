@@ -209,6 +209,11 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
    * biçiminde çalışıyor; panelin aynı düzeni göstermesi, işletmecinin
    * müşterinin göreceği listeyi zihninde kurmasını sağlıyor. Şehri girilmemiş
    * kayıtlar posta koduyla anılır — boş başlıklı bir grup okunmaz olurdu.
+   *
+   * **Teslimat yapılan şehirler üstte.** Ekranı açan kişinin asıl sorusu
+   * "şu an nereye gidiyoruz"; alfabetik sırada açık şehirler, dizinden
+   * eklenip kapalı bekleyen onlarca köyün arasına dağılıyordu. Grubun içinde
+   * de aynı kural: açık posta kodları önce, sonra posta koduna göre.
    */
   const grouped = useMemo(() => {
     const byCity = new Map<string, DeliveryZoneRecord[]>();
@@ -217,8 +222,21 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
       byCity.set(city, [...(byCity.get(city) ?? []), zone]);
     }
     return [...byCity.entries()]
-      .map(([city, list]) => ({ city, zones: list }))
-      .sort((a, b) => a.city.localeCompare(b.city, "de"));
+      .map(([city, list]) => ({
+        city,
+        zones: list
+          .slice()
+          .sort(
+            (a, b) =>
+              Number(b.active) - Number(a.active) || a.postalCode.localeCompare(b.postalCode)
+          ),
+      }))
+      .sort((a, b) => {
+        const aOpen = a.zones.some((zone) => zone.active);
+        const bOpen = b.zones.some((zone) => zone.active);
+        if (aOpen !== bOpen) return aOpen ? -1 : 1;
+        return a.city.localeCompare(b.city, "de");
+      });
   }, [zones]);
 
   /**
@@ -539,14 +557,24 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
       )}
 
       <div className="space-y-3">
-        {visible.map((group) => {
+        {visible.map((group, index) => {
           const open = openCities.has(group.city);
           // Aramada süzülmüş grup gelir: sayılar da altta gerçekten duran
           // satırları anlatır, yoksa başlık listeyle çelişirdi.
           const openZones = group.zones.filter((zone) => zone.active).length;
+          // Açık şehirlerle kapalılar arasındaki sınır bir ara başlıkla
+          // işaretlenir; yalnızca iki taraf da doluysa anlamlı.
+          const firstClosed =
+            openZones === 0 &&
+            index > 0 &&
+            visible[index - 1].zones.some((zone) => zone.active);
 
           return (
-            <section key={group.city} className="border border-line bg-char">
+            <div key={group.city}>
+            {firstClosed && (
+              <p className="tag mb-3 mt-6 text-smoke/70">Teslimat yapılmayan şehirler</p>
+            )}
+            <section className="border border-line bg-char">
               {/*
                 Grup başlığı bir düğme: kapalıyken şehrin adı ve o şehre
                 teslimat olup olmadığı görünür, gerisi istenince gelir.
@@ -644,6 +672,7 @@ export default function ZoneManager({ zones }: { zones: DeliveryZoneRecord[] }) 
                 </ul>
               )}
             </section>
+            </div>
           );
         })}
 
