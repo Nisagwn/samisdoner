@@ -27,3 +27,6 @@ deploy/backup-secrets/
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+
+# Ajan worktree'leri ve yerel ayarlar depoya girmez.
+.claude/

@@ -166,6 +166,14 @@ export const deTranslations: Translations = {
     seeMenu: "GANZE SPEISEKARTE →",
   },
   reviews: {
+    countWord: "Bewertungen",
+    deliveryScore: "Lieferung",
+    replyLabel: "Antwort von Sami´s Döner",
+    verified: "✓ Echte Bestellung",
+    trustNote:
+      "Diese Bewertungen stammen ausschließlich von Gästen, die hier tatsächlich bestellt und ihre Lieferung erhalten haben — bewertet wird direkt im Kundenkonto, eine Bestellung kann genau einmal bewertet werden. Wir löschen keine Bewertungen. Verstößt ein Text gegen geltendes Recht (z. B. Beleidigungen), blenden wir ihn mit Begründung aus; die Bewertung zählt dann auch nicht mehr in den Durchschnitt.",
+    googleNote:
+      "Bis zur ersten Bewertung über unser Bestellsystem zeigen wir hier unsere Google-Bewertungen. Sie stammen von Google und wurden nicht von uns ausgewählt.",
     rating: "4.9",
     count: "(106 Google Bewertungen)",
     subTitle: "Das sagen unsere Gäste!",

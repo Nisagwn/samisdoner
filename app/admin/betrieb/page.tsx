@@ -1,3 +1,4 @@
+import { requirePanel } from "@/lib/admin/page";
 import type { Metadata } from "next";
 import BusinessManager from "@/components/admin/BusinessManager";
 import {
@@ -22,6 +23,8 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminBusinessPage() {
+  await requirePanel("business");
+
   const [settings, hours, closures] = await Promise.all([
     getBusinessSettings(),
     listOpeningHours(),

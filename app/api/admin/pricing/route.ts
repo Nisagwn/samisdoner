@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { badRequest, requireAdmin, storeWrite } from "@/lib/admin/guard";
+import { badRequest, requirePermission, storeWrite } from "@/lib/admin/guard";
 import { getCatalog, updateSettings } from "@/lib/admin/store";
 
 export const runtime = "nodejs";
@@ -27,16 +27,16 @@ function money(value: unknown, field: string): number | { error: string } {
 }
 
 export async function GET() {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const denied = await requirePermission("catalog");
+  if (denied instanceof NextResponse) return denied;
 
   const catalog = await getCatalog();
   return NextResponse.json({ settings: catalog.settings });
 }
 
 export async function PATCH(request: Request) {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const denied = await requirePermission("catalog");
+  if (denied instanceof NextResponse) return denied;
 
   let body: unknown;
   try {

@@ -162,6 +162,14 @@ export const trTranslations = {
     seeMenu: "TÜM MENÜYÜ GÖR →",
   },
   reviews: {
+    countWord: "değerlendirme",
+    deliveryScore: "Teslimat",
+    replyLabel: "Sami´s Döner'in cevabı",
+    verified: "✓ Gerçek sipariş",
+    trustNote:
+      "Buradaki değerlendirmeler yalnızca gerçekten sipariş vermiş ve teslimatını almış müşterilerden gelir — puan hesap üzerinden verilir ve bir sipariş yalnızca bir kez değerlendirilebilir. Hiçbir yorumu silmiyoruz. Bir metin hukuka aykırıysa (ör. hakaret) sebebiyle birlikte gizleriz; o değerlendirme ortalamaya da girmez.",
+    googleNote:
+      "Kendi sipariş sistemimiz üzerinden ilk değerlendirme gelene kadar burada Google yorumlarımızı gösteriyoruz. Bu yorumlar Google'a aittir ve tarafımızca seçilmemiştir.",
     rating: "4.9",
     count: "(106 Google Yorumu)",
     subTitle: "Müşterilerimizin Yorumları",

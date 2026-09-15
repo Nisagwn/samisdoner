@@ -7,6 +7,7 @@ import { createOrderToken } from "@/lib/orders/token";
 import { reorderDrafts } from "@/lib/orders/reorder";
 import { listCustomerOrders } from "./repository";
 import { listFavoriteProductIds } from "./favorites";
+import { listPendingReviews } from "@/lib/reviews/repository";
 import type { AccountOrder } from "@/components/account/OrdersPanel";
 import type { FavoriteItem } from "@/components/account/FavoritesPanel";
 import type { AccountSummary } from "@/components/account/AccountShell";
@@ -23,7 +24,8 @@ import type { AccountSummary } from "@/components/account/AccountShell";
 
 /** Gezinme çubuğundaki sayılar. Üç ucuz sayım; sayfa başına bir kez. */
 export async function getAccountSummary(customerId: string): Promise<AccountSummary> {
-  const [orderCount, activeOrderCount, addressCount, favoriteCount] = await Promise.all([
+  const [orderCount, activeOrderCount, addressCount, favoriteCount, pending] =
+    await Promise.all([
     prisma.order.count({ where: { customerId } }),
     /*
      * "Devam eden" müşteri gözünden tanımlanır ve ödeme bekleyeni de içerir:
@@ -40,9 +42,26 @@ export async function getAccountSummary(customerId: string): Promise<AccountSumm
     }),
     prisma.customerAddress.count({ where: { customerId } }),
     prisma.favorite.count({ where: { customerId } }),
+    /*
+     * Bekleyen değerlendirmeler.
+     *
+     * Ucuz bir sayım değil — uygunluk kuralı (teslim anından bu yana geçen
+     * süre, pencere, zaten yazılmış mı) veritabanında ifade edilemiyor ve
+     * listenin kendisi kuruluyor. Yine de burada duruyor: gezinme çubuğundaki
+     * rozet, "değerlendirilecek bir şey var mı" sorusunun o sayfaya
+     * girmeden görülmesinin tek yolu ve bu soru neredeyse her zaman
+     * "hayır" diye cevaplanacağı için sayfa boşuna açılmamalı.
+     */
+    listPendingReviews(customerId),
   ]);
 
-  return { orderCount, activeOrderCount, addressCount, favoriteCount };
+  return {
+    orderCount,
+    activeOrderCount,
+    addressCount,
+    favoriteCount,
+    pendingReviewCount: pending.length,
+  };
 }
 
 /**

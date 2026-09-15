@@ -4,10 +4,25 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Button, Field, Notice, TextInput } from "./ui";
 
+/**
+ * Panel girişi.
+ *
+ * İki yol var (bkz. app/api/admin/login/route.ts) ve form ikisini de tek
+ * ekranda sunuyor: e-posta yazılırsa kişisel hesapla, boş bırakılırsa ortak
+ * kurtarma parolasıyla girilir.
+ *
+ * Kurtarma yolu bilerek ikinci planda — katlanmış bir bölümün içinde. Görünür
+ * bir "ortak parola" alanı, kişisel hesabı olan personelin de o parolayı
+ * kullanmasına yol açardı; o zaman da panelde kimin ne yaptığı yine
+ * bilinmezdi. Bölüm kapalı durur ama gizli değildir: kilitlenen bir
+ * işletmecinin onu bulabilmesi gerekir.
+ */
 export default function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [recovery, setRecovery] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -23,7 +38,9 @@ export default function LoginForm() {
       const response = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        // Kurtarma kipinde e-posta HİÇ gönderilmez: gönderilseydi uç kişisel
+        // hesap yolunu dener ve ortak parola hiç denenmezdi.
+        body: JSON.stringify(recovery ? { password } : { email, password }),
       });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) {
@@ -52,12 +69,27 @@ export default function LoginForm() {
       </h1>
 
       <div className="space-y-5">
-        <Field label="Admin parolası">
+        {!recovery && (
+          <Field label="E-posta">
+            <TextInput
+              type="email"
+              name="email"
+              autoComplete="username"
+              autoFocus
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="ad@samisdoener.de"
+            />
+          </Field>
+        )}
+
+        <Field label={recovery ? "Ortak kurtarma parolası" : "Parola"}>
           <TextInput
             type="password"
             name="password"
             autoComplete="current-password"
-            autoFocus
+            autoFocus={recovery}
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -67,9 +99,34 @@ export default function LoginForm() {
 
         {error && <Notice kind="error" message={error} />}
 
-        <Button type="submit" disabled={busy || password.length === 0} className="w-full">
+        <Button
+          type="submit"
+          disabled={busy || password.length === 0 || (!recovery && email.length === 0)}
+          className="w-full"
+        >
           {busy ? "GİRİŞ YAPILIYOR…" : "GİRİŞ YAP"}
         </Button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setRecovery((v) => !v);
+            setError(null);
+          }}
+          className="focus-ring block w-full text-center text-xs text-smoke/70 transition-colors hover:text-amber"
+        >
+          {recovery
+            ? "← E-posta ile giriş yap"
+            : "Hesabım yok — ortak parolayla gir"}
+        </button>
+
+        {recovery && (
+          <p className="border border-line bg-void px-3 py-2 text-xs leading-relaxed text-smoke/70">
+            Bu yol yalnızca ilk kurulum ve kurtarma içindir. Girdikten sonra
+            <strong className="text-bone"> Personel</strong> ekranından kendinize
+            bir hesap açın: panelde kimin ne yaptığı ancak o zaman yazılır.
+          </p>
+        )}
       </div>
     </form>
   );

@@ -6,6 +6,7 @@ import { formatCents } from "@/lib/money";
 import { ADMIN_STATUS_LABELS, isTerminal, needsRefund, nextStatuses } from "@/lib/orders/status";
 import { CANCEL_REASONS, adminCancelLabel } from "@/lib/orders/cancelReasons";
 import { playOrderAlert, unlockAudio } from "@/lib/kitchenAudio";
+import { PREP_CHOICES, type PrepChoice } from "@/lib/admin/promise";
 import { useScrollLock } from "@/lib/useScrollLock";
 import { Button, TextArea, Toggle } from "./ui";
 import OrderReceipt from "./OrderReceipt";
@@ -429,10 +430,14 @@ export default function OrderFeed() {
                       minutes={minutesSince(order.createdAt)}
                       busy={busy === order.id}
                       onAcknowledge={() => act(order, { action: "acknowledge" })}
-                      onTransition={(status) =>
+                      onTransition={(status, prepMinutes) =>
                         status === "CANCELLED" || status === "REJECTED"
                           ? setCancelling({ order, status })
-                          : act(order, { action: "transition", status })
+                          : act(order, {
+                              action: "transition",
+                              status,
+                              ...(prepMinutes ? { prepMinutes } : {}),
+                            })
                       }
                       onDelay={(minutes) => act(order, { action: "delay", minutes })}
                       onPrint={() => setPrinting(order)}
@@ -486,7 +491,8 @@ function OrderCard({
   minutes: number;
   busy: boolean;
   onAcknowledge: () => void;
-  onTransition: (status: OrderStatus) => void;
+  /** Hazırlık süresi yalnızca "Kabul et" adımında anlamlı; diğerlerinde verilmez. */
+  onTransition: (status: OrderStatus, prepMinutes?: PrepChoice) => void;
   onDelay: (minutes: 5 | 10 | 15) => void;
   onPrint: () => void;
 }) {
@@ -618,22 +624,68 @@ function OrderCard({
         )}
       </div>
 
+      {/*
+        Kabul + hazırlık süresi.
+
+        Kabul etmek tek başına bir cevap değil: müşteri "kabul edildi" değil
+        "ne zaman?" sorusunun cevabını bekliyor. Sipariş anında dondurulan
+        tahmin (ortalama hazırlık + bölge) iyi bir varsayılan ama tezgâhı
+        gören tek taraf mutfak — bu yüzden kabul, süre seçimiyle **aynı**
+        dokunuşta yapılır.
+
+        Süreler listeden: yoğun bir mutfakta klavyeyle sayı girmek çalışmaz,
+        ayrıca yanlış dokunuşla "+120 dk" gönderilemez. "Süre belirtmeden
+        kabul et" seçeneği ayrı duruyor — telefonla teyit edilmiş bir
+        siparişte saat zaten konuşulmuştur.
+      */}
+      {actions.includes("ACCEPTED") && (
+        <div className="mt-3 border border-amber/40 bg-amber/5 p-3">
+          <p className="tag mb-2 text-amber">Kabul et — hazır olma süresi</p>
+          <div className="flex flex-wrap gap-2">
+            {PREP_CHOICES.map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                onClick={() => onTransition("ACCEPTED", choice)}
+                disabled={busy}
+                /* Mutfakta tablet/telefonla dokunulur: hedef en az 44px ve
+                   rakam gürültülü ortamda uzaktan okunacak kadar büyük. */
+                className="focus-ring min-h-[52px] min-w-[68px] border border-amber bg-amber/10 px-3 py-2 font-display text-lg font-extrabold tabular-nums text-amber transition-colors hover:bg-amber hover:text-void disabled:opacity-40"
+              >
+                {choice}
+                <span className="ml-1 text-xs font-semibold">dk</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => onTransition("ACCEPTED")}
+              disabled={busy}
+              className="focus-ring tag min-h-[52px] border border-line px-3 py-2 text-smoke transition-colors hover:border-amber hover:text-amber disabled:opacity-40"
+            >
+              Süresiz
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mt-3 flex flex-wrap gap-2">
         {isNew && (
           <Button onClick={onAcknowledge} disabled={busy}>
             Görüldü
           </Button>
         )}
-        {actions.map((status) => (
-          <Button
-            key={status}
-            variant={status === "CANCELLED" || status === "REJECTED" ? "danger" : "ghost"}
-            onClick={() => onTransition(status)}
-            disabled={busy}
-          >
-            {ACTION_LABELS[status] ?? ADMIN_STATUS_LABELS[status]}
-          </Button>
-        ))}
+        {actions
+          .filter((status) => status !== "ACCEPTED")
+          .map((status) => (
+            <Button
+              key={status}
+              variant={status === "CANCELLED" || status === "REJECTED" ? "danger" : "ghost"}
+              onClick={() => onTransition(status)}
+              disabled={busy}
+            >
+              {ACTION_LABELS[status] ?? ADMIN_STATUS_LABELS[status]}
+            </Button>
+          ))}
         <Button variant="ghost" onClick={onPrint}>
           Fiş
         </Button>

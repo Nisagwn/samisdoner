@@ -112,6 +112,70 @@ const DE = {
   deleteTitle: "Konto löschen",
   serverError: "Server nicht erreichbar.",
   saveFailed: "Speichern fehlgeschlagen.",
+
+  /* --- değerlendirme --- */
+  navReviews: "Bewertungen",
+  reviewsTitle: "Ihre Bewertungen",
+  reviewsLead:
+    "Bewerten können Sie nur Bestellungen, die tatsächlich bei Ihnen angekommen sind — deshalb steht hinter jeder Bewertung auf unserer Seite eine echte Bestellung.",
+  reviewsNonePending:
+    "Zurzeit gibt es nichts zu bewerten. Nach Ihrer nächsten Lieferung erscheint die Bestellung hier.",
+  reviewsFoodLabel: "Das Essen",
+  reviewsDeliveryLabel: "Die Lieferung",
+  reviewsCommentLabel: "Ihr Kommentar",
+  reviewsCommentPlaceholder: "Was war gut, was können wir besser machen?",
+  reviewsOptional: "optional",
+  reviewsSubmit: "BEWERTUNG ABSCHICKEN",
+  reviewsSending: "WIRD GESENDET…",
+  reviewsClosesAt: "Bewertbar bis",
+  reviewsError: "Die Bewertung konnte nicht gespeichert werden.",
+  reviewsMineTitle: "Bereits abgegeben",
+  reviewsReplyLabel: "Antwort von Sami´s Döner",
+  reviewsHidden:
+    "Diese Bewertung ist derzeit nicht öffentlich sichtbar.",
+
+  /* --- izinler --- */
+  consentTitle: "Benachrichtigungen",
+  consentLead:
+    "Bestellbestätigungen und Statusmeldungen gehören zur Bestellung und werden immer verschickt. Alles andere entscheiden Sie.",
+  consentMarketing: "Angebote und Neuigkeiten per E-Mail",
+  consentMarketingHint:
+    "Höchstens ein paar Mal im Jahr. Sie können die Einwilligung jederzeit hier widerrufen.",
+  consentReviewMails: "Erinnerung, meine Bestellung zu bewerten",
+  consentReviewMailsHint:
+    "Eine kurze E-Mail nach der Lieferung. Keine Werbung.",
+  consentSaved: "Einstellungen gespeichert.",
+
+  /* --- e-posta doğrulama --- */
+  verifyTitle: "E-Mail-Adresse",
+  verifyPending: "Noch nicht bestätigt",
+  verifyDone: "Bestätigt",
+  verifyLead:
+    "Erst mit einer bestätigten Adresse können wir Ihr Passwort sicher zurücksetzen.",
+  verifySend: "BESTÄTIGUNGSLINK SENDEN",
+  verifySent:
+    "Wir haben Ihnen einen Link geschickt. Er ist eine Woche gültig.",
+
+  /* --- damga kartı --- */
+  stampTitle: "Stempelkarte",
+  stampLead:
+    "Jede gelieferte Bestellung ist ein Stempel. Ist die Karte voll, zeigen Sie den Code bei der nächsten Bestellung vor.",
+  stampProgress: "Stempel gesammelt",
+  stampReady: "Ihre Karte ist voll!",
+  stampCodeLabel: "Ihr Code",
+  stampCodeHint:
+    "Nennen Sie diesen Code am Telefon oder an der Theke. Unser Team löst ihn für Sie ein.",
+  stampExpires: "Gültig bis",
+  stampNone: "Noch kein voller Stempelpass.",
+
+  /* --- misafir siparişi bağlama --- */
+  claimTitle: "Frühere Bestellung zuordnen",
+  claimLead:
+    "Als Gast bestellt? Mit Bestellnummer und der damals angegebenen Telefonnummer holen Sie die Bestellung in Ihr Konto.",
+  claimOrderNo: "Bestellnummer",
+  claimPhone: "Telefonnummer der Bestellung",
+  claimSubmit: "BESTELLUNG ZUORDNEN",
+  claimDone: "Die Bestellung gehört jetzt zu Ihrem Konto.",
 };
 
 /**
@@ -212,4 +276,60 @@ const TR: typeof DE = {
   deleteTitle: "Hesabı sil",
   serverError: "Sunucuya ulaşılamadı.",
   saveFailed: "Kaydedilemedi.",
+
+  navReviews: "Değerlendirmeler",
+  reviewsTitle: "Değerlendirmeleriniz",
+  reviewsLead:
+    "Yalnızca size gerçekten ulaşan siparişleri değerlendirebilirsiniz — sitemizdeki her yorumun arkasında gerçek bir sipariş bu yüzden var.",
+  reviewsNonePending:
+    "Şu an değerlendirilecek bir şey yok. Bir sonraki teslimattan sonra siparişiniz burada görünecek.",
+  reviewsFoodLabel: "Yemek",
+  reviewsDeliveryLabel: "Teslimat",
+  reviewsCommentLabel: "Yorumunuz",
+  reviewsCommentPlaceholder: "Ne iyiydi, neyi daha iyi yapabiliriz?",
+  reviewsOptional: "isteğe bağlı",
+  reviewsSubmit: "DEĞERLENDİRMEYİ GÖNDER",
+  reviewsSending: "GÖNDERİLİYOR…",
+  reviewsClosesAt: "Son değerlendirme tarihi",
+  reviewsError: "Değerlendirme kaydedilemedi.",
+  reviewsMineTitle: "Yazdıklarınız",
+  reviewsReplyLabel: "Sami´s Döner'in cevabı",
+  reviewsHidden: "Bu değerlendirme şu anda sitede görünmüyor.",
+
+  consentTitle: "Bildirimler",
+  consentLead:
+    "Sipariş onayı ve durum bildirimleri siparişin parçasıdır, her zaman gönderilir. Gerisine siz karar verirsiniz.",
+  consentMarketing: "Kampanya ve haberler için e-posta",
+  consentMarketingHint:
+    "Yılda birkaç kez, daha fazla değil. İzni istediğiniz zaman buradan geri alabilirsiniz.",
+  consentReviewMails: "Siparişimi değerlendirme hatırlatması",
+  consentReviewMailsHint: "Teslimattan sonra kısa bir e-posta. Reklam değil.",
+  consentSaved: "Ayarlar kaydedildi.",
+
+  verifyTitle: "E-posta adresi",
+  verifyPending: "Henüz doğrulanmadı",
+  verifyDone: "Doğrulandı",
+  verifyLead:
+    "Parolanızı güvenle sıfırlayabilmemiz için adresin doğrulanmış olması gerekir.",
+  verifySend: "DOĞRULAMA BAĞLANTISI GÖNDER",
+  verifySent: "Size bir bağlantı gönderdik. Bir hafta geçerlidir.",
+
+  stampTitle: "Damga kartı",
+  stampLead:
+    "Teslim edilen her sipariş bir damgadır. Kart dolduğunda kodu bir sonraki siparişinizde gösterin.",
+  stampProgress: "damga toplandı",
+  stampReady: "Kartınız doldu!",
+  stampCodeLabel: "Kodunuz",
+  stampCodeHint:
+    "Bu kodu telefonda ya da tezgâhta söyleyin; ekibimiz sizin için kullanır.",
+  stampExpires: "Son kullanma",
+  stampNone: "Henüz dolmuş bir damga kartı yok.",
+
+  claimTitle: "Eski siparişi hesabına ekle",
+  claimLead:
+    "Misafir olarak mı sipariş verdiniz? Sipariş numarası ve o siparişteki telefon numarasıyla siparişi hesabınıza alın.",
+  claimOrderNo: "Sipariş numarası",
+  claimPhone: "Siparişteki telefon numarası",
+  claimSubmit: "SİPARİŞİ EKLE",
+  claimDone: "Sipariş artık hesabınıza ait.",
 };
