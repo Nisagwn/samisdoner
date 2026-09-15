@@ -100,3 +100,76 @@ export const createOrderSchema = z
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type GuestCustomer = z.infer<typeof guestCustomerSchema>;
 export type DeliveryAddress = z.infer<typeof deliveryAddressSchema>;
+
+/* ═══════════════════════════════════════════════════ panel: kupon girdisi */
+
+/**
+ * Kupon oluşturma/düzenleme gövdesi.
+ *
+ * Panel kullanıcısına da güvenilmez: yanlış girilmiş bir kupon burada durdurulmazsa
+ * her siparişte para kaybettirir ve fark edilmesi günler sürer. Doğrulama bu
+ * yüzden dar:
+ *
+ *  - Kod yalnızca harf ve rakam. Boşluk, tire ve noktalama telefonda yanlış
+ *    yazılır ve müşteri "kod çalışmıyor" diye arar.
+ *  - Yüzde 1–100 arasında. 0 indirimsiz bir kampanya, 100'ün üstü anlamsız.
+ *  - Sabit tutar 1 cent – 500 €. Üst sınır bir yazım hatasının (250 yerine
+ *    25000) tüm sepeti bedavaya getirmesini engeller.
+ *  - Tarihler verilmişse başlangıç bitişten önce olmalı; aksi hâlde hiçbir
+ *    zaman geçerli olmayan bir kupon üretilir.
+ *
+ * Tutarlar **cent** olarak gelir: panelin geri kalanında da öyle
+ * (bkz. lib/orders/zones.ts), Euro'ya çevrim arayüzde bir kez yapılır.
+ */
+const couponBaseSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(3, "Kod en az 3 karakter olmalı.")
+    .max(40, "Kod en fazla 40 karakter olabilir.")
+    .regex(/^[A-Za-z0-9]+$/, "Kod yalnızca harf ve rakam içerebilir."),
+  kind: z.enum(["PERCENT", "FIXED"]),
+  value: z.number().int().min(1, "İndirim değeri en az 1 olmalı."),
+  minOrderCents: z.number().int().min(0).max(1_000_00).default(0),
+  /** Yalnızca yüzde kuponunda anlamlı; 0 = tavan yok. */
+  maxDiscountCents: z.number().int().min(0).max(500_00).default(0),
+  /** null = her iki teslim biçiminde geçerli. */
+  fulfillment: z.enum(["DELIVERY", "PICKUP"]).nullable().default(null),
+  startsAt: z.string().datetime().nullable().default(null),
+  expiresAt: z.string().datetime().nullable().default(null),
+  /** 0 = sınırsız. */
+  maxRedemptions: z.number().int().min(0).max(100_000).default(0),
+  active: z.boolean().default(true),
+});
+
+export const couponSchema = couponBaseSchema
+  .refine((value) => value.kind !== "PERCENT" || value.value <= 100, {
+    message: "Yüzde indirimi 100'den büyük olamaz.",
+    path: ["value"],
+  })
+  .refine((value) => value.kind !== "FIXED" || value.value <= 500_00, {
+    message: "Sabit indirim en fazla 500 € olabilir.",
+    path: ["value"],
+  })
+  .refine(
+    (value) =>
+      !value.startsAt || !value.expiresAt || Date.parse(value.startsAt) < Date.parse(value.expiresAt),
+    { message: "Başlangıç tarihi bitiş tarihinden önce olmalı.", path: ["expiresAt"] }
+  );
+
+/**
+ * Düzenleme gövdesi — her alan isteğe bağlı.
+ *
+ * `partial()` taban şema üzerinde uygulanır, `couponSchema` üzerinde değil:
+ * çapraz alan kuralları (yüzde ≤ 100) iki alanın birlikte gönderilmesini
+ * gerektiriyor ve kısmi güncellemede ikisi de gelmeyebilir. O kuralların
+ * kısmi hâli aşağıda, bilinen değerlerle yeniden kurulur.
+ */
+export const couponPatchSchema = couponBaseSchema.partial().refine(
+  (value) =>
+    value.kind !== "PERCENT" || value.value === undefined || value.value <= 100,
+  { message: "Yüzde indirimi 100'den büyük olamaz.", path: ["value"] }
+);
+
+export type CouponBody = z.infer<typeof couponSchema>;
+export type CouponPatchBody = z.infer<typeof couponPatchSchema>;

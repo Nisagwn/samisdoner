@@ -5,7 +5,8 @@ import {
   type VatBucket,
 } from "@/lib/admin/store";
 import { checkOrderability, deliveryFeeFor, type RejectionReason } from "./availability";
-import { evaluateCoupon, findCouponRule, type CouponRejection } from "./coupon";
+import { evaluateCoupon, type CouponRejection } from "./coupon";
+import { findCouponRule } from "./coupons";
 import { clampTip } from "./tip";
 import { composeTotals } from "./totals";
 

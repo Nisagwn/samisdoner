@@ -1,6 +1,8 @@
 import Stripe from "stripe";
 import {
+  CheckoutAmountMismatchError,
   WebhookSignatureError,
+  checkoutAmountOf,
   type CheckoutRequest,
   type CheckoutSession,
   type PaymentEvent,
@@ -23,6 +25,24 @@ import {
  * Hangi ödeme yöntemlerinin görüneceği **Stripe panelinden** yönetilir
  * (Settings → Payment methods). Bu yüzden burada `payment_method_types`
  * verilmez: yeni bir yöntem açmak için kod dağıtmak gerekmesin.
+ *
+ * AÇIK YÖNTEMLER — hesapta doğrulandı (test modu, DE hesabı)
+ *
+ *   card · paypal · klarna · link · apple_pay · google_pay
+ *
+ * Apple Pay ve Google Pay oturumun `payment_method_types` listesinde ayrı
+ * görünmez; Checkout onları `card` üzerinden, tarayıcı destekliyorsa cüzdan
+ * olarak sunar. Listede görünmemeleri kapalı oldukları anlamına gelmez.
+ *
+ * **Sofort ve giropay bilinçli olarak kapalı**: Stripe ikisini de emekliye
+ * ayırdı (giropay 2024 sonunda tamamen kapandı, Sofort'un yerini Klarna'nın
+ * banka havalesi akışı aldı). Almanya'da o ihtiyacı bugün Klarna karşılıyor ve
+ * zaten açık.
+ *
+ * DİKKAT: bu ayar **hesaba** aittir, koda değil. Canlı anahtara geçildiğinde
+ * aynı yöntemlerin canlı modda da açık olduğu Stripe panelinden doğrulanmalı;
+ * aksi hâlde ödeme ekranındaki "PayPal, Karte, Apple Pay und Google Pay"
+ * vaadi tutulmaz.
  */
 
 /**
@@ -159,11 +179,19 @@ export const stripeProvider: PaymentProvider = {
      * müşteriden ekranda yazandan başka bir tutar çekilir ve fark ancak
      * muhasebede görülür. Burada durmak, orada bulmaktan ucuz.
      */
-    const expected = sumOf(items) - request.discountCents;
+    const expected = checkoutAmountOf(request);
     if (expected !== request.totalCents) {
-      throw new Error(
-        `Ödeme tutarı tutmuyor: satırlar ${expected} cent, sipariş ${request.totalCents} cent.`
-      );
+      throw new CheckoutAmountMismatchError(expected, request.totalCents);
+    }
+
+    /*
+     * İkinci bir kontrol: kalemlerin toplamı, kalemlerden türetilen tutarla da
+     * uyuşmalı. İlki "biz ne hesapladık" sorusunu, bu "Stripe'a ne gönderdik"
+     * sorusunu cevaplıyor — `toLineItems` bir kalemi düşürürse (ör. sıfır
+     * tutarlı satır) fark burada görünür.
+     */
+    if (sumOf(items) - request.discountCents !== expected) {
+      throw new CheckoutAmountMismatchError(sumOf(items) - request.discountCents, expected);
     }
 
     /*

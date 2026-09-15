@@ -131,6 +131,41 @@ export interface PaymentProvider {
   refund(providerRef: string, amountCents?: number): Promise<RefundResult>;
 }
 
+/**
+ * Ödeme isteğinin kendi içinden çıkan toplam.
+ *
+ * Sağlayıcıya gönderilen kalemler (satırlar + ücret + bahşiş − indirim) ile
+ * siparişe yazılan `totalCents` **aynı sayı olmak zorunda**. İkisi ayrı yerde
+ * hesaplanıyor: biri `composeTotals` içinde katalog fiyatlarından, diğeri
+ * burada sağlayıcıya gidecek kalemlerden. Araya bir gün yeni bir kalem
+ * (ambalaj ücreti, ikinci bir kampanya) girer ve yalnız birine eklenirse,
+ * müşteriden ekranda yazandan başka bir tutar çekilir — ve fark ancak
+ * muhasebede görülür.
+ *
+ * Sürücünün içinde değil burada: saf bir fonksiyon olarak testte doğrudan
+ * çalıştırılabilsin ve Stripe'a özgü olmayan bu kural yeni bir sürücü
+ * yazıldığında da elde kalsın.
+ */
+export function checkoutAmountOf(
+  request: Pick<CheckoutRequest, "lines" | "feeCents" | "tipCents" | "discountCents">
+): number {
+  const lines = request.lines.reduce((sum, line) => sum + line.unitCents * line.qty, 0);
+  return lines + request.feeCents + request.tipCents - request.discountCents;
+}
+
+/** Tutar tutmuyorsa fırlatılır; oturum hiç açılmamalıdır. */
+export class CheckoutAmountMismatchError extends Error {
+  constructor(
+    readonly expectedCents: number,
+    readonly requestedCents: number
+  ) {
+    super(
+      `Ödeme tutarı tutmuyor: kalemler ${expectedCents} cent, sipariş ${requestedCents} cent.`
+    );
+    this.name = "CheckoutAmountMismatchError";
+  }
+}
+
 /** İmza doğrulanamadığında fırlatılır — çağıran taraf 400 döner. */
 export class WebhookSignatureError extends Error {
   constructor(cause?: unknown) {

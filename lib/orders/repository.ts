@@ -6,7 +6,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { PricedLine, VatBucket } from "@/lib/admin/store";
-import { redeemCoupon } from "./coupon";
+import { redeemCoupon } from "./coupons";
 import { InvalidTransitionError, canTransition } from "./status";
 import { composeTotals } from "./totals";
 
