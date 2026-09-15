@@ -3,6 +3,16 @@
   // Core Web Vitals'ı bozan kalıplar. Ayrıca bir stil kuralı eklenmedi —
   // biçimlendirme tartışması kod incelemesinden alınıp araca verilecekse
   // bunun yeri Prettier'dır, lint değil.
+  // Arama burada durur; üst dizinlerdeki yapılandırmalar okunmaz.
+  //
+  // Gerekçesi somut: git worktree'leri depo klasörünün İÇİNDE açıldığında
+  // (.claude/worktrees/...) ESLint yukarı doğru yürüyüp ana kopyanın
+  // .eslintrc.json dosyasını da buluyor ve aynı eklentiyi iki kez yüklemeye
+  // çalışıp "Plugin @next/next was conflicted" ile düşüyor. Bayrak ayrıca
+  // deponun dışında kalan bir yapılandırmanın buradaki kurallara sızmasını da
+  // engelliyor.
+  "root": true,
+
   "extends": ["next/core-web-vitals"],
 
   "ignorePatterns": [".next", ".next-dev", "node_modules", "public"],

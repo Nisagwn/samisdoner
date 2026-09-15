@@ -21,10 +21,16 @@ import { BUSINESS_INFO } from "@/data/businessInfo";
 import type { DeliveryCity } from "@/app/api/menu/delivery/route";
 import type { MenuStatus } from "@/app/api/menu/status/route";
 import type { AddressRecord } from "@/lib/account/addresses";
+import type { OrderOptions } from "@/app/api/orders/options/route";
 import { AddressFields } from "./AddressFields";
 import { SavedAddresses } from "./SavedAddresses";
 import { FulfillmentSwitch } from "./FulfillmentSwitch";
 import { MinimumProgress, SummaryPanel } from "./SummaryPanel";
+import { TimingPicker } from "./TimingPicker";
+import { PaymentMethodPicker, type PaymentMethodChoice } from "./PaymentMethodPicker";
+import { TipSelector } from "./TipSelector";
+import { CouponField, describeRejection } from "./CouponField";
+import { useCheckoutQuote } from "./useCheckoutQuote";
 
 /**
  * Ödeme sayfası.
@@ -46,17 +52,7 @@ import { MinimumProgress, SummaryPanel } from "./SummaryPanel";
 export function CheckoutView() {
   const { t, lang } = useLanguage();
   const searchParams = useSearchParams();
-  const {
-    lines,
-    count,
-    quote,
-    pricing,
-    loaded,
-    fulfillment,
-    zip,
-    setFulfillment,
-    setZip,
-  } = useCart();
+  const { lines, count, loaded, fulfillment, zip, setFulfillment, setZip } = useCart();
 
   const [form, setForm] = useState<CheckoutFormValues>(EMPTY_CHECKOUT_FORM);
   const [city, setCity] = useState("");
@@ -64,6 +60,22 @@ export function CheckoutView() {
   const [zonesFailed, setZonesFailed] = useState(false);
   const [status, setStatus] = useState<MenuStatus | null>(null);
   const [errors, setErrors] = useState<CheckoutFieldErrors>({});
+
+  /*
+   * Ödeme adımının kendi seçimleri.
+   *
+   * Hiçbiri sepet bağlamında tutulmuyor: üçü de yalnızca bu ekranda anlamlı ve
+   * sepet çekmecesinde görünmüyor. Müşteri sekmeyi kapatıp geri dönerse
+   * sıfırlanırlar — kupon ve bahşiş gibi kararların "hatırlanması", müşterinin
+   * farkında olmadan bahşiş ödemesi demek olurdu.
+   */
+  const [options, setOptions] = useState<OrderOptions | null>(null);
+  const [timing, setTiming] = useState<"asap" | "scheduled">("asap");
+  const [slot, setSlot] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodChoice>("ONLINE");
+  const [tipCents, setTipCents] = useState(0);
+  /** Sunucuya gönderilen kod. Alana yazılan taslak `CouponField` içinde durur. */
+  const [couponCode, setCouponCode] = useState("");
   /**
    * Hesaba kayıtlı adresler.
    *
@@ -91,8 +103,29 @@ export function CheckoutView() {
   zipRef.current = zip;
 
   const isDelivery = fulfillment === "DELIVERY";
+
+  /** "En kısa sürede"de boş; ileri saatte seçilen kutunun ISO değeri. */
+  const requestedAt = timing === "scheduled" ? slot : "";
+
+  /*
+   * Tutarlar bu ekranın kendi teklifinden okunur (kupon, bahşiş ve ileri saat
+   * de hesaba girsin diye). Sepet çekmecesinin kendi teklifi değişmeden
+   * çalışmaya devam eder.
+   */
+  const { quote, pricing } = useCheckoutQuote(
+    { lines, lang, fulfillment, zip, couponCode, tipCents, requestedAt },
+    loaded
+  );
+
   const totalsReady = quote !== null && pricing !== "error";
   const hasUnavailable = quote?.hasUnavailable ?? false;
+
+  /*
+   * Bahşiş yalnızca online ödemede sorulur: kapıda ödemede müşteri bahşişi
+   * elden veriyor, ekranda ikinci kez sormak aynı parayı iki kez istemek gibi
+   * görünürdü.
+   */
+  const tipVisible = paymentMethod === "ONLINE";
 
   /** Stripe'tan vazgeçip dönen müşteri: sepeti ve formu duruyor. */
   const cancelled = searchParams.get("abgebrochen") === "1";
@@ -122,8 +155,45 @@ export function CheckoutView() {
         // kesin karar zaten sunucuda, sipariş oluşturulurken veriliyor.
       });
 
+    /*
+     * Zaman aralıkları ve açık ödeme yöntemleri.
+     *
+     * Okunamazsa akış **online ödeme + en kısa sürede** olarak devam eder:
+     * ikisi de her zaman geçerli olan varsayılanlar. Ön sipariş ve kapıda
+     * ödeme seçenekleri o durumda hiç görünmez — gösterilip sunucuda
+     * reddedilmelerindense hiç görünmemeleri yeğdir.
+     */
+    fetch("/api/orders/options", { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("options"))))
+      .then((data: OrderOptions) => setOptions(data))
+      .catch(() => undefined);
+
     return () => controller.abort();
   }, []);
+
+  /*
+   * Dükkân kapalıyken tek meşru sipariş biçimi ön sipariştir; seçim
+   * kendiliğinden oraya kayar. Müşteriye "kapalıyız" deyip elinde çalışmayan
+   * bir "en kısa sürede" düğmesi bırakmanın anlamı yok.
+   */
+  useEffect(() => {
+    if (!options || options.openNow || options.slots.length === 0) return;
+    setTiming((current) => (current === "asap" ? "scheduled" : current));
+  }, [options]);
+
+  /*
+   * Kapıda ödeme panelden kapatılmışsa seçim online'a döner. Sunucu da aynı
+   * kararı veriyor; buradaki düzeltme, müşterinin sipariş düğmesine basana
+   * kadar bunu öğrenmemesini engelliyor.
+   */
+  useEffect(() => {
+    if (options && !options.onSitePaymentEnabled) setPaymentMethod("ONLINE");
+  }, [options]);
+
+  /* Bahşiş yalnızca online ödemede sorulur; yöntem değişince tutar düşer. */
+  useEffect(() => {
+    if (!tipVisible) setTipCents(0);
+  }, [tipVisible]);
 
   /*
    * Oturum açıksa formu kayıtlı bilgilerle doldur.
@@ -284,6 +354,27 @@ export function CheckoutView() {
         return t.cart.empty;
       case "invalid_input":
         return error.message;
+      case "slot_unavailable":
+        return t.orderFlow.errSlotUnavailable;
+      case "payment_method_unavailable":
+        return t.orderFlow.errPaymentMethod;
+      case "coupon_gone":
+        return t.orderFlow.couponGone;
+      /*
+       * Kupon ret sebepleri sipariş düğmesine basıldığında da dönebilir:
+       * müşteri kodu girdikten sonra sepetten ürün çıkarıp asgari tutarın
+       * altına düşmüş olabilir. Cümleyi üreten `describeRejection`, kod
+       * alanının altındakiyle aynı — iki yerde iki farklı açıklama,
+       * müşterinin hangisine inanacağını bilememesi demek.
+       */
+      case "coupon_unknown":
+      case "coupon_inactive":
+      case "coupon_not_started":
+      case "coupon_expired":
+      case "coupon_exhausted":
+      case "coupon_wrong_fulfillment":
+      case "coupon_below_minimum":
+        return describeRejection(error, t);
     }
   };
 
@@ -346,7 +437,24 @@ export function CheckoutView() {
 
     try {
       const result = await createOrderAction(
-        toCreateOrderInput({ lines, lang, fulfillment, values: form, zip, city })
+        toCreateOrderInput({
+          lines,
+          lang,
+          fulfillment,
+          values: form,
+          zip,
+          city,
+          paymentMethod,
+          /*
+           * Kupon ve bahşiş, **sunucunun onayladığı** hâlleriyle gönderilir
+           * (`quote.couponCode`, `quote.tipCents`) — ekranda yazan ne ise o.
+           * Yerel taslakları göndermek, reddedilmiş bir kodu ya da
+           * kelepçelenmemiş bir bahşişi siparişe taşımak olurdu.
+           */
+          couponCode: quote?.couponCode ?? "",
+          tipCents: quote?.tipCents ?? 0,
+          requestedAt,
+        })
       );
 
       if (!result.ok) {
@@ -381,8 +489,14 @@ export function CheckoutView() {
     totalsReady &&
     !hasUnavailable &&
     quote.rejection === null &&
+    // Geçersiz bir kuponla sipariş verilemez: sunucu da reddediyor, ama
+    // müşteri bunu düğmeye basmadan önce görmeli.
+    quote.couponRejection === null &&
     !submitting &&
-    (!isDelivery || /^\d{5}$/.test(zip));
+    (!isDelivery || /^\d{5}$/.test(zip)) &&
+    // İleri saat seçildiyse saat de seçilmiş olmalı; yoksa sipariş sessizce
+    // "en kısa sürede"ye düşerdi.
+    (timing === "asap" || slot !== "");
 
   /**
    * Yasal uyarı metnindeki {agb} / {privacy} yer tutucularını bağlantıya
@@ -572,6 +686,27 @@ export function CheckoutView() {
               </div>
             )}
 
+            {/*
+              Teslim zamanı adresin hemen altında: Lieferando'da da seçici
+              adres ve kişisel bilgilerin altında duruyor. Sıra mantıklı —
+              "nereye" sorusunun cevabı verilmeden "ne zaman" sorusunun cevabı
+              anlam taşımıyor (bölgeye göre süre değişiyor).
+            */}
+            <TimingPicker
+              options={options}
+              mode={timing}
+              slot={slot}
+              onModeChange={(next) => {
+                setTiming(next);
+                // "En kısa sürede"ye dönüldüğünde seçili saat bırakılmaz:
+                // ekranda görünmeyen bir saatin siparişe gitmesi, müşterinin
+                // beklemediği bir teslim saati demek.
+                if (next === "asap") setSlot("");
+              }}
+              onSlotChange={setSlot}
+              t={t}
+            />
+
             <Field label={t.cart.noteLabel} htmlFor="note">
               <TextInput
                 id="note"
@@ -582,6 +717,48 @@ export function CheckoutView() {
               />
             </Field>
           </section>
+
+          {/*
+            Ödeme yöntemi, kupon ve bahşiş.
+
+            Üçü de sol sütunda, özetin dışında: § 312j Abs. 2 BGB özet bloğu
+            ile sipariş düğmesinin arasına yasal metin dışında hiçbir şeyin
+            girmesine izin vermiyor. Bu alanlar tutarları değiştiriyor,
+            dolayısıyla özetin ÜSTÜNDE değil, ayrı bir sütunda durmaları
+            gerekiyor — değişiklikleri özete anında yansıyor.
+          */}
+          <section aria-labelledby="pay-how-title" className="space-y-6">
+            <h2 id="pay-how-title" className="section-heading">
+              <span className="font-mono text-amber">3</span> {t.orderFlow.paymentTitle}
+            </h2>
+
+            <PaymentMethodPicker
+              value={paymentMethod}
+              onChange={setPaymentMethod}
+              onSiteEnabled={options?.onSitePaymentEnabled ?? false}
+              isDelivery={isDelivery}
+              t={t}
+            />
+
+            <CouponField
+              appliedCode={quote?.couponCode ?? ""}
+              discountCents={quote?.discountCents ?? 0}
+              rejection={quote?.couponRejection ?? null}
+              checking={pricing === "loading"}
+              onApply={setCouponCode}
+              onRemove={() => setCouponCode("")}
+              t={t}
+            />
+
+            {tipVisible && (
+              <TipSelector
+                subtotalCents={quote?.subtotalCents ?? 0}
+                tipCents={quote?.tipCents ?? 0}
+                onChange={setTipCents}
+                t={t}
+              />
+            )}
+          </section>
         </div>
 
         {/* ------------------------------------------------------- özet */}
@@ -590,7 +767,7 @@ export function CheckoutView() {
           className="space-y-4 lg:sticky lg:top-[calc(var(--nav-h)+1.5rem)]"
         >
           <h2 id="payment-title" className="section-heading">
-            <span className="font-mono text-amber">3</span> {t.checkout.stepPayment}
+            <span className="font-mono text-amber">4</span> {t.checkout.summaryTitle}
           </h2>
 
           {totalsReady && quote.remainingForMinimumCents > 0 && (
@@ -667,7 +844,19 @@ export function CheckoutView() {
               disabled={!canSubmit}
               label={submitting ? t.cart.redirecting : t.cart.checkoutBtn}
             />
-            <p className="mt-3 text-xs leading-relaxed text-smoke/60">{t.cart.payOnlineNote}</p>
+            {/* Yöntem değiştiğinde açıklama da değişmeli: kapıda ödeyen
+                müşteriye "Stripe'a yönlendirileceksiniz" demek yanlış. */}
+            <p className="mt-3 text-xs leading-relaxed text-smoke/60">
+              {paymentMethod === "ONLINE"
+                ? t.cart.payOnlineNote
+                : paymentMethod === "CASH"
+                  ? isDelivery
+                    ? t.orderFlow.paymentCashHint
+                    : t.orderFlow.paymentCashPickupHint
+                  : isDelivery
+                    ? t.orderFlow.paymentCardHint
+                    : t.orderFlow.paymentCardPickupHint}
+            </p>
           </div>
         </aside>
       </div>
