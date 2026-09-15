@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import type { AdminRole } from "@prisma/client";
+import { ROLE_LABELS, can, type AdminPermission } from "@/lib/admin/roles";
 
 /**
  * Admin kabuğu: sidebar + içerik alanı.
@@ -41,7 +43,22 @@ const ORDER_POLL_MS = 15_000;
  */
 const NAV_GROUPS: {
   label: string | null;
-  items: { href: string; label: string; hint?: string; exact: boolean; pulse?: boolean }[];
+  items: {
+    href: string;
+    label: string;
+    hint?: string;
+    exact: boolean;
+    pulse?: boolean;
+    /**
+     * Satırın görünmesi için gereken izin. Verilmezse herkese görünür.
+     *
+     * Menüyü gizlemek **koruma değildir** — adresi doğrudan yazan biri sayfayı
+     * açabilir; koruma sayfanın ve ucun kendisinde (bkz. lib/admin/guard.ts).
+     * Buradaki amaç, personelin hiç açamayacağı ekranlara bakıp "bende neden
+     * çalışmıyor" diye uğraşmasını önlemek.
+     */
+    permission?: AdminPermission;
+  }[];
 }[] = [
   {
     label: null,
@@ -54,6 +71,13 @@ const NAV_GROUPS: {
   {
     label: "Kurulum",
     items: [
+      {
+        href: "/admin/bewertungen",
+        label: "Değerlendirmeler",
+        hint: "Yorumlar, puanlar, cevaplar",
+        exact: false,
+        permission: "reviews" as const,
+      },
       {
         href: "/admin/menu",
         label: "Menü",
@@ -71,6 +95,14 @@ const NAV_GROUPS: {
         label: "İşletme",
         hint: "Çalışma saati, sipariş anahtarı",
         exact: false,
+        permission: "business" as const,
+      },
+      {
+        href: "/admin/personal",
+        label: "Personel",
+        hint: "Panele kim girebilir, ne yapabilir",
+        exact: false,
+        permission: "staff" as const,
       },
     ],
   },
@@ -117,7 +149,17 @@ function useOrderPulse(enabled: boolean): OrderPulse | null {
   return pulse;
 }
 
-export default function AdminShell({ children }: { children: React.ReactNode }) {
+export default function AdminShell({
+  role,
+  children,
+}: {
+  /**
+   * Oturumdaki rol. Sunucu düzeninden geçer; istemci onu yalnızca menüyü
+   * kısaltmak için kullanır, yetki kararı için değil.
+   */
+  role: AdminRole;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
@@ -147,7 +189,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               {group.label}
             </p>
           )}
-          {group.items.map((item) => {
+          {group.items
+            .filter((item) => !item.permission || can(role, item.permission))
+            .map((item) => {
             const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
             const badge = item.pulse ? pulse : null;
             return (
@@ -203,7 +247,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       {navOpen && (
         <div className="lg:hidden border-b border-line bg-char px-2 py-3">
           {nav}
-          <SidebarFooter onLogout={logout} loggingOut={loggingOut} />
+          <SidebarFooter role={role} onLogout={logout} loggingOut={loggingOut} />
         </div>
       )}
 
@@ -217,7 +261,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           </Link>
         </div>
         <div className="flex-1 py-5 px-2 overflow-y-auto">{nav}</div>
-        <SidebarFooter onLogout={logout} loggingOut={loggingOut} />
+        <SidebarFooter role={role} onLogout={logout} loggingOut={loggingOut} />
       </aside>
 
       <main className="flex-1 min-w-0 px-5 md:px-8 lg:px-10 py-8 md:py-10">{children}</main>
@@ -255,14 +299,20 @@ function OrderBadge({ pulse }: { pulse: OrderPulse }) {
 }
 
 function SidebarFooter({
+  role,
   onLogout,
   loggingOut,
 }: {
+  role: AdminRole;
   onLogout: () => void;
   loggingOut: boolean;
 }) {
   return (
     <div className="border-t border-line p-4 mt-3 lg:mt-0 space-y-2">
+      {/* Hangi rolle bakıldığı yazılı dursun: eksik bir menü satırı, yetkinin
+          dar olmasından mı yoksa bir arızadan mı kaynaklandığı bilinmeden
+          bakıldığında hep arıza sanılır. */}
+      <p className="tag px-4 pb-1 text-smoke/50">{ROLE_LABELS[role]} olarak girildi</p>
       <Link
         href="/"
         className="focus-ring tag block px-4 py-3 text-smoke hover:text-bone hover:bg-panel transition-colors"

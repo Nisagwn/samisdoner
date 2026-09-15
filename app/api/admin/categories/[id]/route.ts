@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, badRequest, notFound, storeWrite } from "@/lib/admin/guard";
+import { requirePermission, badRequest, notFound, storeWrite } from "@/lib/admin/guard";
 import { deleteCategory, updateCategory } from "@/lib/admin/store";
 import { parseCategoryPatch } from "@/lib/admin/validate";
 
@@ -18,8 +18,8 @@ type Params = { params: { id: string } };
  * gönderir; gönderilmeyen alan olduğu gibi kalır.
  */
 export async function PATCH(request: Request, { params }: Params) {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const denied = await requirePermission("catalog");
+  if (denied instanceof NextResponse) return denied;
 
   let body: unknown;
   try {
@@ -41,8 +41,8 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const denied = await requirePermission("catalog");
+  if (denied instanceof NextResponse) return denied;
 
   const result = await storeWrite(() => deleteCategory(params.id));
   if (result instanceof NextResponse) return result;

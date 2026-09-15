@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { badRequest, notFound, requireAdmin, storeWrite } from "@/lib/admin/guard";
+import { badRequest, notFound, requirePermission, storeWrite } from "@/lib/admin/guard";
+import { can } from "@/lib/admin/roles";
 import { InvalidTransitionError, needsRefund } from "@/lib/orders/status";
 import { buildCancelReason } from "@/lib/orders/cancelReasons";
 import { delayOrderPromise, transitionOrder } from "@/lib/orders/repository";
@@ -71,8 +72,18 @@ const bodySchema = z.union([
 type Params = { params: { id: string } };
 
 export async function PATCH(request: Request, { params }: Params) {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const session = await requirePermission("orders");
+  if (session instanceof NextResponse) return session;
+
+  /*
+   * Olayın faili artık bir kişi.
+   *
+   * `OrderEvent.actor` uzun süre herkes için "admin" yazıyordu; "bu siparişi
+   * kim iptal etti" sorusunun cevabı hiçbir yerde yoktu. Ortak kurtarma
+   * parolasıyla girilmişse kimlik yine yok — ama o zaman da bunu söyleyen
+   * ayrı bir değer yazılır, sessizce "admin" denmez.
+   */
+  const actor = session.userId === "env" ? "admin:recovery" : `admin:${session.userId}`;
 
   let raw: unknown;
   try {
@@ -111,7 +122,7 @@ export async function PATCH(request: Request, { params }: Params) {
    */
   if (parsed.data.action === "delay") {
     const minutes = parsed.data.minutes;
-    const result = await storeWrite(() => delayOrderPromise(params.id, minutes, "admin"));
+    const result = await storeWrite(() => delayOrderPromise(params.id, minutes, actor));
     if (result instanceof NextResponse) return result;
     if (result === null) {
       return NextResponse.json(
@@ -143,8 +154,27 @@ export async function PATCH(request: Request, { params }: Params) {
     reason = built;
   }
 
+  /*
+   * İade yetkisi ayrı.
+   *
+   * Vardiyadaki herkes bir siparişi reddedebilmeli — yanlış reddedilen sipariş
+   * aynı akşam telefonla düzelir. Para iadesi ise geri alınamaz ve bankadan
+   * geri çağrılamaz; bu yüzden ödemesi alınmış bir siparişi iptal etmek ayrı
+   * bir izne bağlı. Kontrol geçişten ÖNCE: yetkisiz biri siparişi iptal edip
+   * parayı iade edilmemiş bırakamamalı.
+   */
+  if (cancelling && needsRefund(exists.status) && !can(session.role, "refund")) {
+    return NextResponse.json(
+      {
+        error:
+          "Ödemesi alınmış bir siparişi iptal etmek para iadesi gerektirir ve bunun için yetkiniz yok. Sahibe bildirin.",
+      },
+      { status: 403 }
+    );
+  }
+
   try {
-    const order = await transitionOrder(params.id, parsed.data.status, "admin", {
+    const order = await transitionOrder(params.id, parsed.data.status, actor, {
       reason,
       ...(reason ? { meta: { cancelReason: reason } } : {}),
     });
@@ -158,7 +188,7 @@ export async function PATCH(request: Request, { params }: Params) {
      */
     let promisedAt: Date | null = null;
     if (parsed.data.prepMinutes !== undefined && parsed.data.status === "ACCEPTED") {
-      promisedAt = await setPromiseFromNow(params.id, parsed.data.prepMinutes, "admin");
+      promisedAt = await setPromiseFromNow(params.id, parsed.data.prepMinutes, actor);
     }
 
     /*
@@ -174,7 +204,7 @@ export async function PATCH(request: Request, { params }: Params) {
      * yok. Ölçüt geçişin **kaynağıdır**, hedefi değil.
      */
     if (cancelling && needsRefund(exists.status)) {
-      const refund = await refundOrder(order, reason ?? "", "admin");
+      const refund = await refundOrder(order, reason ?? "", actor);
       if (refund.kind === "failed") {
         // 200 değil: iptal oldu ama para dönmedi ve bu görülmeli.
         return NextResponse.json(

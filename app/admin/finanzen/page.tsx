@@ -1,3 +1,4 @@
+import { requirePanel } from "@/lib/admin/page";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/money";
@@ -81,6 +82,8 @@ export default async function FinancePage({
 }: {
   searchParams?: { range?: string };
 }) {
+  await requirePanel("finance");
+
   const rangeDays = normalizeFinanceRange(searchParams?.range);
   const rangeStart = financeRangeStart(rangeDays);
 

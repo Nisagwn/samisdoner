@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { badRequest, requireAdmin, storeWrite } from "@/lib/admin/guard";
+import { badRequest, requirePermission, storeWrite } from "@/lib/admin/guard";
+import { can } from "@/lib/admin/roles";
 import {
   getBusinessSettings,
   replaceOpeningHours,
@@ -77,8 +78,8 @@ const bodySchema = z.discriminatedUnion("section", [
  * gelmediği fark edildiğinde anlaşılan en pahalı sessiz arızadır.
  */
 export async function GET() {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const denied = await requirePermission("shift");
+  if (denied instanceof NextResponse) return denied;
 
   const [settings, openNow] = await Promise.all([getBusinessSettings(), isOpenNow()]);
   return NextResponse.json({
@@ -93,8 +94,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const denied = await requirePermission("shift");
+  if (denied instanceof NextResponse) return denied;
 
   let raw: unknown;
   try {
@@ -109,6 +110,21 @@ export async function PATCH(request: Request) {
   }
 
   const body = parsed.data;
+
+  /*
+   * İki farklı yetki, tek uç.
+   *
+   * Sipariş anahtarı ve hazırlık süresi **vardiya** ayarlarıdır: yoğunluğa
+   * cevap veren kişi mutfaktakidir ve o cevabı vermek için müdür beklemez.
+   * Çalışma saatleri ile tatil günleri ise kurulumdur — yanlış girilen bir
+   * cumartesi akşamı, kimse fark etmeden bir günlük ciroyu siler.
+   */
+  if (body.section !== "settings" && !can(denied.role, "business")) {
+    return NextResponse.json(
+      { error: "Çalışma saatlerini ve tatil günlerini değiştirme yetkiniz yok." },
+      { status: 403 }
+    );
+  }
 
   if (body.section === "settings") {
     const { section, ...patch } = body;
