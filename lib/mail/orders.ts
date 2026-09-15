@@ -1,6 +1,8 @@
+import type { OrderStatus } from "@prisma/client";
 import { Resend } from "resend";
 import { formatCents } from "@/lib/money";
 import { BUSINESS_INFO } from "@/data/businessInfo";
+import { describeCancelReason } from "@/lib/orders/cancelReasons";
 import type { OrderWithDetails } from "@/lib/orders/repository";
 import { orderTrackingUrl } from "@/lib/orders/token";
 import { SITE_URL } from "@/lib/site";
@@ -90,6 +92,17 @@ function linesTable(order: OrderWithDetails): string {
   if (order.serviceFeeCents > 0) {
     fees.push(feeRow("Servicegebühr", order.serviceFeeCents));
   }
+  /*
+   * İndirim eksi işaretle yazılır. Kupon kodu da satırda görünür: müşteri
+   * "kodum geçti mi" sorusunu faturaya bakarak cevaplayabilmeli.
+   */
+  if (order.discountCents > 0) {
+    const label = order.couponCode ? `Gutschein ${order.couponCode}` : "Gutschein";
+    fees.push(feeRow(label, -order.discountCents));
+  }
+  if (order.tipCents > 0) {
+    fees.push(feeRow("Trinkgeld", order.tipCents));
+  }
 
   return `
     <table style="width:100%;border-collapse:collapse;font-size:14px;">
@@ -133,6 +146,26 @@ function vatTable(order: OrderWithDetails): string {
   return `<table style="width:100%;border-collapse:collapse;font-size:12px;color:#666;margin-top:12px;">${rows}</table>`;
 }
 
+/**
+ * İleri saatli sipariş uyarısı — işletme bildiriminin en üstünde.
+ *
+ * Vurgulu bir kutu, çünkü bu bilginin kaçırılması siparişin dört saat erken
+ * hazırlanması demek. Hemen teslimatta satır hiç çıkmaz.
+ */
+function preOrderBlock(order: OrderWithDetails): string {
+  if (!order.requestedAt) return "";
+
+  const time = new Intl.DateTimeFormat("de-DE", {
+    timeZone: "Europe/Berlin",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(order.requestedAt);
+
+  return `<p style="margin:0 0 12px;padding:10px;background:#fff3cd;border-left:4px solid #e0a800;font-size:15px;">
+    <strong>VORBESTELLUNG — ${escapeHtml(time)}</strong></p>`;
+}
+
 function addressBlock(order: OrderWithDetails): string {
   if (order.fulfillment === "PICKUP") return "<p><strong>Abholung</strong></p>";
   return `<p style="margin:0 0 4px;"><strong>Lieferadresse</strong><br>
@@ -166,12 +199,25 @@ export async function sendNewOrderNotification(order: OrderWithDetails): Promise
     return false;
   }
 
+  /*
+   * Ödeme durumu mutfağın ilk bakışta görmesi gereken bilgi: kapıda ödenecek
+   * siparişte kuryenin parayı alması gerekiyor ve "bezahlt" yazan bir fişle
+   * yola çıkan kurye o parayı istemez.
+   */
+  const payment =
+    order.paymentMethod === "CASH"
+      ? "BAR bei Übergabe"
+      : order.paymentMethod === "CARD_ON_DELIVERY"
+        ? "KARTE bei Übergabe"
+        : "bezahlt";
+
   const body = `
     <p style="margin:0 0 12px;font-size:15px;">
       <strong>${escapeHtml(order.orderNo)}</strong> —
       ${order.fulfillment === "DELIVERY" ? "Lieferung" : "Abholung"} ·
-      ${formatCents(order.totalCents)} (bezahlt)
+      ${formatCents(order.totalCents)} (${escapeHtml(payment)})
     </p>
+    ${preOrderBlock(order)}
     ${addressBlock(order)}
     ${order.note ? `<p style="margin:8px 0;padding:8px;background:#fff8e1;">Notiz: ${escapeHtml(order.note)}</p>` : ""}
     ${linesTable(order)}
@@ -231,6 +277,146 @@ export async function sendOrderConfirmation(order: OrderWithDetails): Promise<bo
     html: shell(de ? "Bestellbestätigung" : "Sipariş onayı", body),
   });
 }
+
+/**
+ * Sipariş durumu değiştiğinde müşteriye bildirim.
+ *
+ * NEDEN HER DURUM DEĞİL
+ *
+ * Referans siteler (Lieferando, Wolt) ilerlemeyi canlı bir takip ekranında
+ * gösteriyor ve e-postayı **kilometre taşlarına** saklıyor. Bizde de takip
+ * sayfası 20 saniyede bir tazeleniyor; her ara adım için mail atmak,
+ * müşterinin gelen kutusuna bir akşamda beş mesaj bırakmak olurdu ve
+ * beşincisini kimse açmaz.
+ *
+ * Bu yüzden yalnızca müşterinin **davranışını değiştiren** anlar bildiriliyor:
+ *  - ACCEPTED: sipariş kabul edildi, artık kesin geliyor.
+ *  - OUT_FOR_DELIVERY: kurye yolda, kapıya yaklaş.
+ *  - READY: gel-alda paket hazır, yola çıkabilirsin.
+ *  - CANCELLED / REJECTED: gelmiyor — akşam yemeği planı değişti.
+ *
+ * PREPARING ve DELIVERED/PICKED_UP bilinçli olarak dışarıda: ilki takip
+ * sayfasında zaten görünüyor, ikincisi müşterinin yemeği elinde tuttuğu an —
+ * ona "yemeğiniz teslim edildi" demek bilgi taşımıyor.
+ *
+ * İptalde bu mail iade bildiriminin yerini almaz; ikisi farklı şeyi anlatır
+ * (biri "gelmiyor", diğeri "paranız döndü") ve iade maili `refundOrder`
+ * tarafından ayrıca gönderilir.
+ */
+export async function sendOrderStatusUpdate(order: OrderWithDetails): Promise<boolean> {
+  if (!order.email) return false;
+
+  const de = order.lang !== "tr";
+  const copy = STATUS_MAILS[order.status];
+  if (!copy) return false;
+
+  const text = copy[de ? "de" : "tr"];
+  const url = await orderTrackingUrl(order.orderNo);
+
+  // İptal/ret sebebi müşterinin kendi dilinde; panelde seçilen kimlikten üretilir.
+  const reason =
+    order.status === "CANCELLED" || order.status === "REJECTED"
+      ? describeCancelReason(order.cancelReason, order.lang)
+      : null;
+
+  const body = `
+    <p style="margin:0 0 12px;font-size:15px;">
+      <strong>${escapeHtml(order.orderNo)}</strong>
+    </p>
+    <p style="margin:0 0 16px;">${escapeHtml(text.body)}</p>
+    ${reason ? `<p style="margin:0 0 16px;padding:8px;background:#f5f5f5;">${escapeHtml(reason)}</p>` : ""}
+    ${promisedLine(order, de)}
+    <p style="margin:0 0 20px;">
+      <a href="${url}" style="display:inline-block;background:#111;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">
+        ${escapeHtml(de ? "Bestellung verfolgen" : "Siparişi takip et")}
+      </a>
+    </p>`;
+
+  return send({
+    to: order.email,
+    subject: `${text.subject} — ${order.orderNo}`,
+    html: shell(text.subject, body),
+  });
+}
+
+/** Söz verilen teslim saati; yoksa satır hiç çıkmaz. */
+function promisedLine(order: OrderWithDetails, de: boolean): string {
+  if (!order.promisedAt) return "";
+  if (order.status === "CANCELLED" || order.status === "REJECTED") return "";
+
+  const time = new Intl.DateTimeFormat(de ? "de-DE" : "tr-TR", {
+    timeZone: "Europe/Berlin",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(order.promisedAt);
+
+  const label =
+    order.fulfillment === "DELIVERY"
+      ? de
+        ? "Voraussichtlich bei Ihnen gegen"
+        : "Tahmini teslimat"
+      : de
+        ? "Voraussichtlich abholbereit gegen"
+        : "Tahminen hazır olur";
+
+  return `<p style="margin:0 0 16px;color:#666;">${escapeHtml(label)} <strong>${escapeHtml(time)}</strong></p>`;
+}
+
+/** Bildirilen durumlar ve metinleri. Listede olmayan durum mail üretmez. */
+const STATUS_MAILS: Partial<
+  Record<OrderStatus, { de: { subject: string; body: string }; tr: { subject: string; body: string } }>
+> = {
+  ACCEPTED: {
+    de: {
+      subject: "Bestellung angenommen",
+      body: "Wir haben Ihre Bestellung angenommen und bereiten sie gleich zu.",
+    },
+    tr: {
+      subject: "Siparişiniz alındı",
+      body: "Siparişinizi aldık, birazdan hazırlamaya başlıyoruz.",
+    },
+  },
+  OUT_FOR_DELIVERY: {
+    de: {
+      subject: "Ihre Bestellung ist unterwegs",
+      body: "Ihre Bestellung hat unsere Küche verlassen und ist auf dem Weg zu Ihnen.",
+    },
+    tr: {
+      subject: "Siparişiniz yolda",
+      body: "Siparişiniz mutfaktan çıktı ve size doğru yola çıktı.",
+    },
+  },
+  READY: {
+    de: {
+      subject: "Ihre Bestellung ist abholbereit",
+      body: "Ihre Bestellung ist fertig und wartet bei uns auf Sie.",
+    },
+    tr: {
+      subject: "Siparişiniz hazır",
+      body: "Siparişiniz hazır, dükkânda sizi bekliyor.",
+    },
+  },
+  CANCELLED: {
+    de: {
+      subject: "Bestellung storniert",
+      body: "Ihre Bestellung wurde storniert.",
+    },
+    tr: {
+      subject: "Sipariş iptal edildi",
+      body: "Siparişiniz iptal edildi.",
+    },
+  },
+  REJECTED: {
+    de: {
+      subject: "Bestellung abgelehnt",
+      body: "Wir konnten Ihre Bestellung leider nicht ausführen.",
+    },
+    tr: {
+      subject: "Sipariş gerçekleştirilemedi",
+      body: "Siparişinizi maalesef gerçekleştiremedik.",
+    },
+  },
+};
 
 /**
  * Müşteriye iade bildirimi.
