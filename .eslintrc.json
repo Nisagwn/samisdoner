@@ -1,4 +1,15 @@
 {
+  // Arama burada durur.
+  //
+  // ESLint yapılandırmayı bulmak için dizinleri **yukarı doğru** tarar. Depo
+  // bir git worktree'sinde açıldığında (ör. .claude/worktrees/<dal>/) üst
+  // dizinlerde ana kopyanın .eslintrc.json'ı bulunuyor ve aynı eklenti iki
+  // kez yüklendiği için lint hiç çalışmadan düşüyordu:
+  // "Plugin @next/next was conflicted between ...". Bayrak, aramayı bu
+  // dosyada keser; tek kopyada da doğru davranıştır, çünkü projenin kökü
+  // burasıdır.
+  "root": true,
+
   // Next'in önerdiği taban: erişilebilirlik (jsx-a11y), React kancaları ve
   // Core Web Vitals'ı bozan kalıplar. Ayrıca bir stil kuralı eklenmedi —
   // biçimlendirme tartışması kod incelemesinden alınıp araca verilecekse
