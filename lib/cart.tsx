@@ -12,6 +12,7 @@ import {
 import { usePathname } from "next/navigation";
 import type { CartLineInput } from "@/lib/admin/store";
 import type { CheckoutQuote } from "@/lib/orders/checkout";
+import { normalizeNote, optionsKeyPart } from "@/lib/menu/options";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 /**
@@ -29,9 +30,18 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export type CartLine = CartLineInput;
 
-/** Satırı sepette benzersiz kılan anahtar; sunucudaki karşılığıyla aynı biçim. */
+/**
+ * Satırı sepette benzersiz kılan anahtar; sunucudaki `productKey` ile **aynı
+ * biçim**.
+ *
+ * Aynı ürünün farklı yapılandırması ayrı satırdır: ekstra peynirli döner ile
+ * sade döner tek satırda toplanamaz. Not da anahtarın parçası — "soğansız"
+ * yazılmış satır ayrı durmalı, yoksa mutfak iki farklı fişi tek satırda görür.
+ */
 export function lineKey(line: CartLine): string {
-  return `product:${line.productId}|${line.variantSize ?? ""}`;
+  return `product:${line.productId}|${line.variantSize ?? ""}|${optionsKeyPart(
+    line.options ?? []
+  )}|${normalizeNote(line.note)}`;
 }
 
 type PricingState = "idle" | "loading" | "ready" | "error";
@@ -65,6 +75,20 @@ type CartState = {
   add: (line: CartLineDraft) => void;
   setQty: (key: string, qty: number) => void;
   remove: (key: string) => void;
+  /**
+   * Satırı yerinde değiştirir (seçenekleri/notu düzenleme).
+   *
+   * Sil-ve-ekle değil: silinen satır listenin sonuna geri döner ve müşteri
+   * düzenlediği satırı aradığı yerde bulamaz. Yeni yapılandırma sepette zaten
+   * varsa iki satır birleşir.
+   */
+  replace: (key: string, line: CartLineDraft) => void;
+  /** Son silinen satır; "geri al" bunu geri koyar. Yoksa null. */
+  lastRemoved: CartLine | null;
+  /** Son silineni geri koyar. Silinen yoksa hiçbir şey yapmaz. */
+  undoRemove: () => void;
+  /** "Geri al" teklifini kapatır (süre dolunca ya da elle). */
+  dismissUndo: () => void;
   clear: () => void;
   setFulfillment: (value: Fulfillment) => void;
   setZip: (value: string) => void;
@@ -102,10 +126,16 @@ function sanitize(value: unknown): CartLine[] {
      * satır bırakmaktan iyisi bu.
      */
     if (line.kind === "product" && typeof line.productId === "string") {
+      const options = Array.isArray(line.options)
+        ? line.options.filter((id): id is string => typeof id === "string").slice(0, 30)
+        : [];
+      const note = normalizeNote(typeof line.note === "string" ? line.note : "");
       out.push({
         kind: "product",
         productId: line.productId,
         ...(typeof line.variantSize === "string" ? { variantSize: line.variantSize } : {}),
+        ...(options.length > 0 ? { options } : {}),
+        ...(note ? { note } : {}),
         qty,
       });
     }
@@ -218,7 +248,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const add = useCallback((line: CartLineDraft) => {
     const qty = Math.min(MAX_QTY, Math.max(1, Math.floor(line.qty ?? 1)));
-    const next = { ...line, qty } as CartLine;
+    // Not burada sadeleştirilir: "soğansız " ile "soğansız" aynı satır olmalı.
+    const note = normalizeNote(line.note);
+    const next = { ...line, qty, ...(note ? { note } : { note: undefined }) } as CartLine;
     const key = lineKey(next);
     setLines((prev) => {
       const found = prev.find((l) => lineKey(l) === key);
@@ -241,11 +273,70 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  /*
+   * Silme geri alınabilir.
+   *
+   * Sepetteki en pahalı yanlış dokunuş budur: dar ekranda "Entfernen" adet
+   * düğmelerinin hemen yanında duruyor ve yanlışlıkla silinen satırı geri
+   * getirmenin tek yolu menüye dönüp aynı seçimleri baştan yapmaktı — üstelik
+   * seçenekli bir üründe bu dokuz dokunuş demek. Son silinen satır bu yüzden
+   * saklanıyor; sepet durumunun parçası, kalıcı kayıt değil (sayfa
+   * yenilendiğinde unutulur, çünkü o an müşteri zaten başka bir şey yapıyor).
+   */
+  const [lastRemoved, setLastRemoved] = useState<CartLine | null>(null);
+
   const remove = useCallback((key: string) => {
-    setLines((prev) => prev.filter((l) => lineKey(l) !== key));
+    setLines((prev) => {
+      const found = prev.find((l) => lineKey(l) === key);
+      if (found) setLastRemoved(found);
+      return prev.filter((l) => lineKey(l) !== key);
+    });
   }, []);
 
-  const clear = useCallback(() => setLines([]), []);
+  const undoRemove = useCallback(() => {
+    setLastRemoved((removed) => {
+      if (!removed) return null;
+      const key = lineKey(removed);
+      setLines((prev) =>
+        // Aynı yapılandırma arada yeniden eklendiyse adet toplanır, ikinci
+        // satır açılmaz.
+        prev.some((l) => lineKey(l) === key)
+          ? prev.map((l) =>
+              lineKey(l) === key ? { ...l, qty: Math.min(MAX_QTY, l.qty + removed.qty) } : l
+            )
+          : [...prev, removed]
+      );
+      return null;
+    });
+  }, []);
+
+  const dismissUndo = useCallback(() => setLastRemoved(null), []);
+
+  /** Satırı yerinde değiştirir; yeni hâli sepette varsa iki satır birleşir. */
+  const replace = useCallback((key: string, line: CartLineDraft) => {
+    const qty = Math.min(MAX_QTY, Math.max(1, Math.floor(line.qty ?? 1)));
+    const next = { ...line, qty } as CartLine;
+    const nextKey = lineKey(next);
+
+    setLines((prev) => {
+      const index = prev.findIndex((l) => lineKey(l) === key);
+      if (index === -1) return prev;
+
+      const merged = prev.findIndex((l, i) => i !== index && lineKey(l) === nextKey);
+      if (merged === -1) return prev.map((l, i) => (i === index ? next : l));
+
+      return prev
+        .map((l, i) =>
+          i === merged ? { ...l, qty: Math.min(MAX_QTY, l.qty + next.qty) } : l
+        )
+        .filter((_, i) => i !== index);
+    });
+  }, []);
+
+  const clear = useCallback(() => {
+    setLines([]);
+    setLastRemoved(null);
+  }, []);
 
   const setFulfillment = useCallback((value: Fulfillment) => {
     setFulfillmentState(value);
@@ -275,6 +366,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       add,
       setQty,
       remove,
+      replace,
+      lastRemoved,
+      undoRemove,
+      dismissUndo,
       clear,
       setFulfillment,
       setZip,
@@ -292,6 +387,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     add,
     setQty,
     remove,
+    replace,
+    lastRemoved,
+    undoRemove,
+    dismissUndo,
     clear,
     setFulfillment,
     setZip,
