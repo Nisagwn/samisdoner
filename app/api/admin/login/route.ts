@@ -8,7 +8,8 @@ import {
   sessionCookieOptions,
   verifyEnvPassword,
 } from "@/lib/admin/auth";
-import { authenticateStaff } from "@/lib/admin/staff";
+import { authenticateStaff, countOwners } from "@/lib/admin/staff";
+import { readRecoveryFlag, sharedPasswordMode } from "@/lib/admin/recovery";
 import { withDatabase } from "@/lib/security/dbGuard";
 import {
   checkThrottle,
@@ -19,14 +20,16 @@ import {
 } from "@/lib/security/throttle";
 
 /**
- * Panel girişi — iki yol, tek uç.
+ * Panel girişi.
  *
- * 1. **E-posta + parola.** Olağan yol: oturum bir kişiyi taşır, rolü kendi
- *    kaydından gelir ve yaptığı işlemler o kişinin adına yazılır.
- * 2. **Yalnızca parola** (`ADMIN_PASSWORD`). Kurtarma yolu: `AdminUser`
- *    tablosunda hiç kullanıcı yokken ilk girişin bir yerden yapılması gerekir,
- *    ve personel listesinden yanlışlıkla düşen bir işletmecinin panele
- *    girmesinin başka yolu olmamalı. Bu yolla girenin rolü OWNER'dır.
+ * Olağan hâlde **tek yol** vardır: e-posta + parola. Oturum bir kişiyi taşır,
+ * rolü kendi kaydından gelir, yaptığı işlemler o kişinin adına yazılır.
+ *
+ * Ortak parola (`ADMIN_PASSWORD`) bir giriş yöntemi değil, **kurulum
+ * anahtarıdır**: yalnızca panelde hiç etkin sahip hesabı yokken ya da sunucuda
+ * `ADMIN_RECOVERY` açıkken çalışır (bkz. lib/admin/recovery.ts). İşletmeci
+ * kendi hesabını açtığı an bu yol kendiliğinden kapanır — yani canlıda kalıcı
+ * bir ikinci giriş kalmaz.
  *
  * Hangi yolun denendiği gövdedeki `email` alanının varlığından anlaşılır.
  * Hata mesajı iki yolda da aynı: "hangi e-posta kayıtlı" sorusunun cevabı bir
@@ -105,8 +108,36 @@ export async function POST(request: Request) {
       );
     }
 
-    /* Kurtarma yolu. */
-    if (!process.env.ADMIN_PASSWORD || !(await verifyEnvPassword(password))) {
+    /*
+     * Ortak parola yolu.
+     *
+     * Kip **her istekte** yeniden hesaplanır, önbelleğe alınmaz: sahip hesabı
+     * açıldığı anda bu yol kapanmalı, bir sonraki dağıtımı beklememeli.
+     */
+    const mode = sharedPasswordMode({
+      activeOwners: await countOwners(),
+      recoveryFlag: readRecoveryFlag(process.env.ADMIN_RECOVERY),
+      passwordConfigured: Boolean(process.env.ADMIN_PASSWORD),
+    });
+
+    if (mode === "closed") {
+      /*
+       * Burada `WRONG` yazılmaz. O cümle "hangi e-posta kayıtlı" sorusunu
+       * gizlemek içindir; burada gizlenecek bir şey yok ve yanlış parola
+       * sanan işletmeci ortak parolayı denemeye devam eder. Doğrusunu söylemek
+       * kimseye bir şey sızdırmaz: yolun kapalı olduğu zaten kuralın kendisi.
+       */
+      await recordFailure(keys);
+      return NextResponse.json(
+        {
+          error:
+            "Ortak parolayla giriş kapalı. Lütfen kendi e-postanız ve parolanızla girin.",
+        },
+        { status: 403 }
+      );
+    }
+
+    if (!(await verifyEnvPassword(password))) {
       await recordFailure(keys);
       return NextResponse.json({ error: WRONG }, { status: 401 });
     }
@@ -114,7 +145,7 @@ export async function POST(request: Request) {
     await clearAttempts(keys);
     return withSession(
       { userId: ENV_OWNER_ID, role: "OWNER", tokenVersion: 0 },
-      { email: "", role: "OWNER", recovery: true }
+      { email: "", role: "OWNER", recovery: true, setup: mode === "setup" }
     );
   });
 }
