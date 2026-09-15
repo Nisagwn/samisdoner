@@ -384,4 +384,89 @@ export const deTranslations: Translations = {
     homeBtn: "STARTSEITE",
     callHint: "Wenn es eilig ist, nehmen wir Ihre Bestellung auch telefonisch auf:",
   },
+
+  /**
+   * ══════════════════════════════════════════ sipariş hunisi (keşif → sepet)
+   *
+   * Ürün penceresi, menü rozetleri, kapalı bandı ve sepetin eşik/öneri
+   * kısımları. Kendi bloğunda duruyor: bu alanda çalışan metinler bir arada
+   * kalsın, dosyanın ortasındaki mevcut anahtarlarla karışmasın.
+   */
+  ordering: {
+    badges: {
+      popular: "Beliebt",
+      new: "Neu",
+      vegetarian: "Vegetarisch",
+      vegan: "Vegan",
+      spicy: "Scharf",
+      discount: "−{percent} %",
+    },
+
+    item: {
+      required: "Pflichtauswahl",
+      optional: "Optional",
+      chooseExactly: "Wähle {min}",
+      chooseUpTo: "Wähle bis zu {max}",
+      chooseMinMax: "Wähle {min}–{max}",
+      included: "inklusive",
+      selectedCount: "{count}/{max} gewählt",
+      missingRequired: "Bitte zuerst „{group}“ wählen.",
+      maxReached: "In dieser Gruppe sind höchstens {max} Auswahlen möglich.",
+      noteLabel: "Anmerkung für die Küche (optional)",
+      notePlaceholder: "Ohne Zwiebeln, extra scharf…",
+      noteHint: "Sonderwünsche sind kostenlos, aber nicht immer möglich.",
+      qtyLabel: "Menge",
+      addForTotal: "IN DEN WARENKORB · {amount}",
+      saveChanges: "ÄNDERUNGEN SPEICHERN · {amount}",
+      customize: "Anpassen",
+      choose: "AUSWÄHLEN →",
+      close: "Schließen",
+      unitPrice: "Einzelpreis",
+      priceNote: "Alle Preise inkl. MwSt. Der endgültige Betrag wird im Warenkorb berechnet.",
+    },
+
+    status: {
+      closedTitle: "Wir haben gerade geschlossen",
+      closedText:
+        "Du kannst deinen Warenkorb trotzdem füllen und bestellen, sobald wir wieder öffnen.",
+      pausedTitle: "Bestellannahme pausiert",
+      pausedText: "Wir machen kurz Pause. Bitte versuche es gleich noch einmal.",
+      opensToday: "Heute ab {time} geöffnet.",
+      opensTomorrow: "Morgen ab {time} geöffnet.",
+      opensWeekday: "{weekday} ab {time} geöffnet.",
+      opensUnknown: "Öffnungszeiten erfragst du am besten telefonisch.",
+      todayHours: "Heute: {hours}",
+      closedToday: "Heute geschlossen.",
+      openNow: "Jetzt geöffnet",
+      weekdays: [
+        "Sonntag",
+        "Montag",
+        "Dienstag",
+        "Mittwoch",
+        "Donnerstag",
+        "Freitag",
+        "Samstag",
+      ],
+    },
+
+    cart: {
+      editLine: "Ändern",
+      removed: "„{name}“ entfernt.",
+      undo: "Rückgängig",
+      minOrderTitle: "Mindestbestellwert",
+      minOrderRemaining: "Noch {amount} bis zum Mindestbestellwert",
+      minOrderReached: "Mindestbestellwert erreicht",
+      minOrderGeneric: "Mindestbestellwert ab {amount} – je nach Liefergebiet.",
+      freeDeliveryTitle: "Kostenlose Lieferung",
+      freeDeliveryRemaining: "Noch {amount} bis zur kostenlosen Lieferung",
+      freeDeliveryReached: "Lieferung kostenlos",
+      freeDeliveryGeneric: "Ab {amount} liefern wir kostenlos.",
+      suggestionsTitle: "Dazu passt",
+      suggestionsAdd: "Hinzufügen",
+      barLabel: "Warenkorb öffnen",
+      barItems: "{count} Artikel",
+      fulfillmentHint: "Liefergebühr und Mindestbestellwert hängen von der Bestellart ab.",
+      zipHint: "Die PLZ wählst du an der Kasse.",
+    },
+  },
 };
