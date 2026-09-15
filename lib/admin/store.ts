@@ -221,6 +221,52 @@ export async function getPublicMenu(): Promise<PublicCategory[]> {
 }
 
 /**
+ * Katalog ürününü kartanın okuduğu satıra çevirir.
+ *
+ * Tek yerde duruyor çünkü aynı şekli üç yer istiyor: menü (`getMenuSections`),
+ * sepetteki satırın düzenlenmesi ve çapraz satış önerileri
+ * (`getMenuItemsByIds` / `getSuggestions`). Üç ayrı kopya, üçünün farklı
+ * alanları unutması demekti.
+ */
+function toMenuItem(p: Product): MenuSection["items"][number] {
+  return {
+    // Kartanın sepete ekleyebilmesi için tek gereken alan. Fiyat değil
+    // kimlik taşınır: tutarı `/api/menu/quote` hesaplar.
+    productId: p.id,
+    no: p.no || undefined,
+    name: p.name,
+    nameTr: p.nameTr || undefined,
+    desc: p.description || undefined,
+    descTr: p.descriptionTr || undefined,
+    image: p.image ?? undefined,
+    // Varyasyonlu üründe satırda tek fiyat değil, boy listesi gösterilir.
+    price: p.variants.length > 0 ? undefined : formatPrice(p.discountPrice ?? p.price),
+    oldPrice: p.variants.length > 0 || p.discountPrice === null ? undefined : formatPrice(p.price),
+    variants:
+      p.variants.length > 0
+        ? p.variants.map((v) => ({
+            size: v.size,
+            price: formatPrice(v.price),
+            priceCents: toCents(v.price),
+            grundpreis: grundpreisLabel(v.size, toCents(v.price)) ?? undefined,
+          }))
+        : undefined,
+    // Pencerede canlı toplam bu tabana kurulur; boy seçilirse varyantın kendi
+    // cent değeri geçerli olur.
+    baseCents: toCents(p.discountPrice ?? p.price),
+    optionGroups: p.optionGroups.length > 0 ? p.optionGroups : undefined,
+    isPopular: p.isPopular || undefined,
+    isNew: p.isNew || undefined,
+    diet: p.diet === "NONE" ? undefined : p.diet,
+    spicyLevel: p.spicyLevel > 0 ? p.spicyLevel : undefined,
+    discountPercent: discountPercent(p) ?? undefined,
+    // Tek fiyatlı üründe hacim bilgisi taşıyan bir etiket yoktur (boy yalnızca
+    // varyantta bulunur), dolayısıyla temel fiyat hesaplanamaz. Uydurulmuş bir
+    // litre değeri göstermektense hiç göstermemek doğrudur.
+  };
+}
+
+/**
  * Kartanın (`/speisekarte`) beklediği görünüm.
  *
  * `data/speisekarte.ts` ile aynı şekli üretir; böylece MenuGrid tarafında
@@ -234,45 +280,62 @@ export async function getMenuSections(): Promise<MenuSection[]> {
     titleTr: cat.nameTr || undefined,
     note: cat.note || undefined,
     noteTr: cat.noteTr || undefined,
-    items: cat.products.map((p) => {
-      return {
-        // Kartanın sepete ekleyebilmesi için tek gereken alan. Fiyat değil
-        // kimlik taşınır: tutarı `/api/menu/quote` hesaplar.
-        productId: p.id,
-        no: p.no || undefined,
-        name: p.name,
-        nameTr: p.nameTr || undefined,
-        desc: p.description || undefined,
-        descTr: p.descriptionTr || undefined,
-        image: p.image ?? undefined,
-        // Varyasyonlu üründe satırda tek fiyat değil, boy listesi gösterilir.
-        price: p.variants.length > 0 ? undefined : formatPrice(p.discountPrice ?? p.price),
-        oldPrice:
-          p.variants.length > 0 || p.discountPrice === null ? undefined : formatPrice(p.price),
-        variants:
-          p.variants.length > 0
-            ? p.variants.map((v) => ({
-                size: v.size,
-                price: formatPrice(v.price),
-                priceCents: toCents(v.price),
-                grundpreis: grundpreisLabel(v.size, toCents(v.price)) ?? undefined,
-              }))
-            : undefined,
-        // Pencerede canlı toplam bu tabana kurulur; boy seçilirse varyantın
-        // kendi cent değeri geçerli olur.
-        baseCents: toCents(p.discountPrice ?? p.price),
-        optionGroups: p.optionGroups.length > 0 ? p.optionGroups : undefined,
-        isPopular: p.isPopular || undefined,
-        isNew: p.isNew || undefined,
-        diet: p.diet === "NONE" ? undefined : p.diet,
-        spicyLevel: p.spicyLevel > 0 ? p.spicyLevel : undefined,
-        discountPercent: discountPercent(p) ?? undefined,
-        // Tek fiyatlı üründe hacim bilgisi taşıyan bir etiket yoktur (boy
-        // yalnızca varyantta bulunur), dolayısıyla temel fiyat hesaplanamaz.
-        // Uydurulmuş bir litre değeri göstermektense hiç göstermemek doğrudur.
-      };
-    }),
+    items: cat.products.map(toMenuItem),
   }));
+}
+
+/**
+ * Tek tek ürünler — sepetteki bir satırı yeniden yapılandırmak için.
+ *
+ * Menüden düşmüş ürün listeye girmez: düzenlenemeyen bir satırı düzenletmeye
+ * çalışmak, müşteriye boş bir pencere açmak olurdu. Çağıran taraf eksik
+ * kimlikten "artık yok" sonucunu çıkarır.
+ */
+export async function getMenuItemsByIds(
+  ids: readonly string[]
+): Promise<MenuSection["items"]> {
+  const catalog = await getCatalog();
+  const wanted = new Set(ids);
+  return catalog.products.filter((p) => wanted.has(p.id) && isVisible(p)).map(toMenuItem);
+}
+
+/**
+ * Çapraz satış önerileri — "Dazu passt".
+ *
+ * Seçim kuralı bilinçli olarak basit: sepette olmayan, **ucuz** ve tek tıkla
+ * eklenebilen (zorunlu seçimi olmayan) ürünler. İçecek ve tatlı kategorileri
+ * öne alınır, çünkü bir dönerin yanına satılan şey pratikte budur.
+ *
+ * Sipariş geçmişinden öğrenen bir öneri motoru kurulmadı: yeni bir dükkânda o
+ * veri yok ve varken bile "bu ürünü alanlar şunu aldı" listesi, otuz ürünlük
+ * bir menüde rastgeleden ayırt edilemez. Basit kural en azından **öngörülebilir**
+ * ve işletmeci sırayı panelden değiştirebiliyor.
+ */
+const SUGGESTION_CATEGORY_HINTS = ["getrank", "getraenk", "drink", "icecek", "dessert", "nachtisch", "tatli"];
+
+export async function getSuggestions(
+  excludeIds: readonly string[],
+  limit = 3
+): Promise<MenuSection["items"]> {
+  const catalog = await getCatalog();
+  const excluded = new Set(excludeIds);
+
+  const candidates = catalog.products
+    .filter((p) => isVisible(p) && !excluded.has(p.id))
+    // Zorunlu seçimi olan ürün öneri olamaz: öneri şeridindeki düğme tek
+    // dokunuşla eklemeli, pencere açmamalı.
+    .filter((p) => !p.optionGroups.some((g) => g.minSelect > 0));
+
+  const slug = (id: string) => id.toLowerCase();
+  const isSide = (categoryId: string) =>
+    SUGGESTION_CATEGORY_HINTS.some((hint) => slug(categoryId).includes(hint));
+
+  const sides = candidates.filter((p) => isSide(p.categoryId));
+  const rest = candidates.filter((p) => !isSide(p.categoryId));
+
+  const byPrice = (a: Product, b: Product) => effectivePrice(a) - effectivePrice(b);
+
+  return [...sides.sort(byPrice), ...rest.sort(byPrice)].slice(0, limit).map(toMenuItem);
 }
 
 export async function getStats() {
