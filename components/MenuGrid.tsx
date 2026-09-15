@@ -8,7 +8,12 @@ import type { MenuItem, MenuSection, MenuVariant } from "@/data/speisekarte";
 import AllergenWarning from "@/components/legal/AllergenWarning";
 import { useCart } from "@/lib/cart";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import ProductBadges from "@/components/ProductBadges";
+import ProductDialog, { type ProductDraft } from "@/components/ProductDialog";
+import MenuStatusBanner from "@/components/MenuStatusBanner";
 import { Button } from "@/components/ui";
+import { matchesMenuItem } from "@/lib/menu/search";
+import { isRequiredGroup } from "@/lib/menu/options";
 import { useLanguage, type Language } from "@/lib/i18n/LanguageContext";
 
 /**
@@ -33,23 +38,23 @@ type Props = {
   sections: MenuSection[];
 };
 
-/** Arama kutusunun eşleştirdiği alanlar; numara da dahil ("07" yazınca bulunur). */
-function matches(item: MenuItem, needle: string): boolean {
-  if (!needle) return true;
-  const haystack = [item.no, item.name, item.nameTr, item.desc, item.descTr]
-    .filter(Boolean)
-    .join(" ")
-    .toLocaleLowerCase("de-DE");
-  return haystack.includes(needle);
-}
-
 export default function MenuGrid({ sections }: Props) {
   const { t, lang } = useLanguage();
+  const { add } = useCart();
   const section = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(sections[0]?.id ?? "");
 
-  const needle = query.trim().toLocaleLowerCase("de-DE");
+  /**
+   * Açık ürün penceresi.
+   *
+   * Tek pencere, en üstte: her satırın kendi penceresini tutması, arama
+   * listeyi daralttığında DOM'dan düşen bir satırın açık penceresini de
+   * götürürdü. Durum burada olunca pencere satırdan bağımsız yaşar.
+   */
+  const [opened, setOpened] = useState<MenuItem | null>(null);
+
+  const needle = query.trim();
 
   /**
    * Aramanın uygulanmış hâli.
@@ -60,7 +65,7 @@ export default function MenuGrid({ sections }: Props) {
   const visible = useMemo(() => {
     if (!needle) return sections;
     return sections
-      .map((cat) => ({ ...cat, items: cat.items.filter((item) => matches(item, needle)) }))
+      .map((cat) => ({ ...cat, items: cat.items.filter((item) => matchesMenuItem(item, needle)) }))
       .filter((cat) => cat.items.length > 0);
   }, [sections, needle]);
 
@@ -144,6 +149,11 @@ export default function MenuGrid({ sections }: Props) {
           <p className="tag text-smoke max-w-[280px]">{t.menuGrid.subText}</p>
         </div>
 
+        {/* Kapalıyken menünün **başında** söylenir.
+            Eskiden bu bilgi yalnızca sepet çekmecesindeydi: müşteri menüyü
+            gezip sepeti doldurduktan sonra öğreniyordu. Bant sepeti
+            doldurmayı engellemiyor, ön siparişin mümkün olduğunu söylüyor. */}
+        <MenuStatusBanner className="mb-8" />
       </div>
 
       {/* Kategori şeridi + arama.
@@ -169,6 +179,11 @@ export default function MenuGrid({ sections }: Props) {
                     aria-current={active === cat.id ? "true" : undefined}
                   >
                     {lang === "tr" ? cat.titleTr ?? cat.title : cat.title}
+                    {/* Kategorideki ürün sayısı: müşteri "İçecekler"e
+                        atlamadan önce orada üç mü otuz mu ürün olduğunu
+                        bilsin. Arama açıkken sayı süzülmüş listeyi gösterir,
+                        yani kaç sonuç olduğunu da söylemiş olur. */}
+                    <span className="ml-1.5 text-smoke/50 tabular-nums">{cat.items.length}</span>
                   </a>
                 </li>
               ))}
@@ -233,6 +248,7 @@ export default function MenuGrid({ sections }: Props) {
                     key={`${category.id}-${item.productId ?? item.no ?? item.name}-${i}`}
                     item={item}
                     lang={lang}
+                    onOpen={() => setOpened(item)}
                   />
                 ))}
               </ul>
@@ -249,6 +265,27 @@ export default function MenuGrid({ sections }: Props) {
       <div className="mx-auto mt-20 w-full max-w-5xl px-5">
         <AllergenWarning />
       </div>
+
+      {opened?.productId && (
+        <ProductDialog
+          item={opened}
+          mode="add"
+          onClose={() => setOpened(null)}
+          onSubmit={(draft: ProductDraft) => {
+            add({
+              kind: "product",
+              productId: opened.productId as string,
+              ...(draft.variantSize ? { variantSize: draft.variantSize } : {}),
+              ...(draft.options.length > 0 ? { options: draft.options } : {}),
+              ...(draft.note ? { note: draft.note } : {}),
+              qty: draft.qty,
+            });
+            // Çekmece bilerek açılmaz: müşteri menüde kalıp eklemeye devam
+            // edebilsin. Eklendiği alttaki sepet çubuğunun sayacından görülür.
+            setOpened(null);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -263,7 +300,16 @@ export default function MenuGrid({ sections }: Props) {
  * gidecek `variantSize` değerini belirler. Böylece "hangi fiyatı ekliyorum"
  * sorusu hiç doğmaz.
  */
-function MenuRow({ item, lang }: { item: MenuItem; lang: Language }) {
+function MenuRow({
+  item,
+  lang,
+  onOpen,
+}: {
+  item: MenuItem;
+  lang: Language;
+  /** Ürün penceresini açar; seçenekli üründe tek yol budur. */
+  onOpen: () => void;
+}) {
   const { t } = useLanguage();
   const { add } = useCart();
   const [sizeIndex, setSizeIndex] = useState(0);
@@ -286,6 +332,21 @@ function MenuRow({ item, lang }: { item: MenuItem; lang: Language }) {
   const shownPrice = selected ? selected.price : item.price;
   const shownGrundpreis = selected ? selected.grundpreis : item.grundpreis;
   const orderable = Boolean(item.productId);
+
+  /*
+   * İki yol var ve ayrımı zorunlu seçim belirler.
+   *
+   * Zorunlu grubu olan üründe (et türü gibi) satırdan doğrudan sepete eklemek
+   * mümkün değil: seçilmemiş bir et türüyle mutfağa fiş gidemez. O yüzden ana
+   * düğme sepete eklemez, pencereyi açar.
+   *
+   * Zorunlu grubu olmayan üründe hızlı yol korunur — bir şişe suyu almak için
+   * pencere açtırmak, en çok tekrarlanan işlemi yavaşlatmak olurdu. Ekstra
+   * istemek ya da not bırakmak isteyen "Özelleştir" ile pencereye gider.
+   */
+  const groups = item.optionGroups ?? [];
+  const mustChoose = groups.some(isRequiredGroup);
+  const canCustomize = groups.length > 0 || orderable;
 
   function addToCart() {
     if (!item.productId) return;
@@ -341,6 +402,8 @@ function MenuRow({ item, lang }: { item: MenuItem; lang: Language }) {
           )}
         </div>
 
+        <ProductBadges item={item} className="mt-2" />
+
         {desc && <p className="text-smoke text-sm leading-relaxed mt-1.5">{desc}</p>}
 
 
@@ -384,14 +447,32 @@ function MenuRow({ item, lang }: { item: MenuItem; lang: Language }) {
         )}
 
         {orderable ? (
-          <Button
-            type="button"
-            variant={justAdded ? "success" : "outline"}
-            onClick={addToCart}
-            className="mt-4 w-full sm:w-auto"
-          >
-            {justAdded ? t.menuGrid.added : t.menuGrid.addToCart}
-          </Button>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant={justAdded ? "success" : "outline"}
+              onClick={mustChoose ? onOpen : addToCart}
+              className="w-full sm:w-auto"
+            >
+              {justAdded
+                ? t.menuGrid.added
+                : mustChoose
+                  ? t.ordering.item.choose
+                  : t.menuGrid.addToCart}
+            </Button>
+            {/* Zorunlu seçim yoksa pencere ikinci bir yol olarak durur:
+                ekstra, not ve adet oradan. Zorunluysa ana düğme zaten
+                pencereyi açıyor, ikinci düğme tekrar olurdu. */}
+            {!mustChoose && canCustomize && (
+              <button
+                type="button"
+                onClick={onOpen}
+                className="focus-ring tag min-h-[44px] border border-line px-3 text-smoke transition-colors hover:border-amber hover:text-amber"
+              >
+                {t.ordering.item.customize}
+              </button>
+            )}
+          </div>
         ) : (
           // Basılı menü kopyasından gelen satır: katalog kimliği yok, sipariş
           // edilemez. Sessizce buton gizlemek yerine sebebi yazılır.
