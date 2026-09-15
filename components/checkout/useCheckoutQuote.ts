@@ -37,6 +37,8 @@ export type QuoteInput = {
   tipCents: number;
   /** ISO; "en kısa sürede"de boş. */
   requestedAt: string;
+  /** Arttığında teklif, girdiler aynı olsa da yeniden istenir. */
+  revision?: number;
 };
 
 export function useCheckoutQuote(input: QuoteInput, enabled: boolean) {
@@ -49,7 +51,7 @@ export function useCheckoutQuote(input: QuoteInput, enabled: boolean) {
   // Satır dizisi her oluşumda yeni bir referans; bağımlılığa referansı değil
   // **içeriğini** vermek gerekiyor, yoksa efekt sonsuz döner.
   const linesKey = JSON.stringify(input.lines);
-  const { lang, fulfillment, zip, couponCode, tipCents, requestedAt } = input;
+  const { lang, fulfillment, zip, couponCode, tipCents, requestedAt, revision = 0 } = input;
 
   useEffect(() => {
     if (!enabled) return;
@@ -95,7 +97,7 @@ export function useCheckoutQuote(input: QuoteInput, enabled: boolean) {
       });
 
     return () => controller.abort();
-  }, [enabled, linesKey, lang, fulfillment, zip, couponCode, tipCents, requestedAt]);
+  }, [enabled, linesKey, lang, fulfillment, zip, couponCode, tipCents, requestedAt, revision]);
 
   return { quote, pricing };
 }

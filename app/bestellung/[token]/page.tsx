@@ -15,6 +15,7 @@ import {
 import { describeCancelReason } from "@/lib/orders/cancelReasons";
 import { customerCancelWindow } from "@/lib/orders/cancelWindow";
 import { reorderDrafts } from "@/lib/orders/reorder";
+import { readDiscountLines } from "@/lib/orders/campaign";
 import { getCurrentCustomer } from "@/lib/account/guard";
 import { deTranslations } from "@/lib/i18n/locales/de";
 import { trTranslations } from "@/lib/i18n/locales/tr";
@@ -54,6 +55,7 @@ export default async function OrderTrackingPage({ params }: Params) {
 
   const de = order.lang !== "tr";
   const t = de ? texts.de : texts.tr;
+  const discountLines = readDiscountLines(order.discountLines);
 
   /*
    * "Siparişlerim" bağlantısı yalnızca oturum açıksa gösterilir. Takip
@@ -170,15 +172,30 @@ export default async function OrderTrackingPage({ params }: Params) {
             {order.serviceFeeCents > 0 && (
               <Row label={t.serviceFee} value={formatCents(order.serviceFeeCents)} muted />
             )}
-            {/* İndirim eksi işaretle; kupon kodu etikette, "hangi kod geçti"
-                sorusu faturaya bakarak cevaplanabilsin. */}
-            {order.discountCents > 0 && (
-              <Row
-                label={order.couponCode ? `${flow.summaryDiscount} · ${order.couponCode}` : flow.summaryDiscount}
-                value={`−${formatCents(order.discountCents)}`}
-                good
-              />
-            )}
+            {/* Her kampanya ayrı satırda, eksi işaretle; kampanya adı ve kodu
+                etikette. Döküm tutulmadan önceki siparişlerde tek satır. */}
+            {discountLines.length > 0
+              ? discountLines.map((line, index) => (
+                  <Row
+                    key={index}
+                    label={[
+                      (de ? line.title || line.titleTr : line.titleTr || line.title) ||
+                        flow.summaryDiscount,
+                      line.code,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                    value={`−${formatCents(line.amountCents)}`}
+                    good
+                  />
+                ))
+              : order.discountCents > 0 && (
+                  <Row
+                    label={order.couponCode ? `${flow.summaryDiscount} · ${order.couponCode}` : flow.summaryDiscount}
+                    value={`−${formatCents(order.discountCents)}`}
+                    good
+                  />
+                )}
             {order.tipCents > 0 && (
               <Row label={flow.summaryTip} value={formatCents(order.tipCents)} muted />
             )}

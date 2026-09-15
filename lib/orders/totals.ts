@@ -41,7 +41,7 @@ export type OrderTotals = {
   subtotalCents: number;
   serviceFeeCents: number;
   deliveryFeeCents: number;
-  /** Kupon indirimi, pozitif cent. Toplamdan düşülür. */
+  /** Bütün kampanya indirimleri (ürün + sepet), pozitif cent. Toplamdan düşülür. */
   discountCents: number;
   /** Bahşiş, pozitif cent. Toplama eklenir, KDV matrahına girmez. */
   tipCents: number;
@@ -54,7 +54,14 @@ export function composeTotals(input: {
   subtotalCents: number;
   serviceFeeCents: number;
   deliveryFeeCents: number;
+  /** **Sepet** indirimi (yüzde / sabit kampanya): bütün satırlara oransal dağıtılır. */
   discountCents?: number;
+  /**
+   * Satır başına **ürün** indirimi (ayın ürünü, menü fiyatı); `lines` ile aynı
+   * sırada. Ait olduğu satırın matrahından düşülür — %19'luk içeceğin
+   * indirimi %7'lik yemeğin vergisini değiştirmesin (bkz. lib/orders/campaign.ts).
+   */
+  lineDiscountCents?: number[];
   tipCents?: number;
 }): OrderTotals {
   const subtotalCents = Math.max(0, Math.round(input.subtotalCents));
@@ -62,25 +69,46 @@ export function composeTotals(input: {
   const deliveryFeeCents = Math.max(0, Math.round(input.deliveryFeeCents));
 
   /*
-   * İndirim burada da kelepçelenir, `discountFor` içinde kelepçelenmiş
-   * olmasına rağmen. Bu fonksiyon indirimin nereden geldiğini bilmez ve
-   * bilmemeli; ara toplamı aşan bir indirim negatif bir KDV matrahı üretir ve
-   * o hata faturaya kadar sessizce gider.
+   * İndirimler burada da kelepçelenir, kampanya hesabında kelepçelenmiş
+   * olmalarına rağmen. Bu fonksiyon indirimin nereden geldiğini bilmez ve
+   * bilmemeli; satırı ya da ara toplamı aşan bir indirim negatif bir KDV
+   * matrahı üretir ve o hata faturaya kadar sessizce gider.
    */
-  const discountCents = Math.min(subtotalCents, Math.max(0, Math.round(input.discountCents ?? 0)));
+  const lineDiscounts = input.lines.map((line, index) =>
+    line.unavailable
+      ? 0
+      : Math.min(
+          Math.max(0, line.lineCents),
+          Math.max(0, Math.round(input.lineDiscountCents?.[index] ?? 0))
+        )
+  );
+  const itemDiscountCents = Math.min(
+    subtotalCents,
+    lineDiscounts.reduce((sum, cents) => sum + cents, 0)
+  );
+  const cartDiscountCents = Math.min(
+    subtotalCents - itemDiscountCents,
+    Math.max(0, Math.round(input.discountCents ?? 0))
+  );
   const tipCents = Math.max(0, Math.round(input.tipCents ?? 0));
 
-  // Satır tutarlarına oransal dağıtılacak net yan edim. İndirim eksi işaretli
-  // girer; dağıtım matematiği işaretten bağımsız çalışır.
-  const taxableExtraCents = serviceFeeCents + deliveryFeeCents - discountCents;
+  // Satır tutarlarına oransal dağıtılacak net yan edim. Sepet indirimi eksi
+  // işaretli girer; dağıtım matematiği işaretten bağımsız çalışır.
+  const taxableExtraCents = serviceFeeCents + deliveryFeeCents - cartDiscountCents;
+
+  // Ürün indirimi, dökümden önce kendi satırından düşülür.
+  const vatLines =
+    itemDiscountCents > 0
+      ? input.lines.map((line, index) => ({ ...line, lineCents: line.lineCents - lineDiscounts[index] }))
+      : input.lines;
 
   return {
     subtotalCents,
     serviceFeeCents,
     deliveryFeeCents,
-    discountCents,
+    discountCents: itemDiscountCents + cartDiscountCents,
     tipCents,
-    totalCents: subtotalCents + taxableExtraCents + tipCents,
-    vatBreakdown: buildVatBreakdown(input.lines, taxableExtraCents),
+    totalCents: subtotalCents - itemDiscountCents + taxableExtraCents + tipCents,
+    vatBreakdown: buildVatBreakdown(vatLines, taxableExtraCents),
   };
 }

@@ -350,12 +350,17 @@ model Order {
   subtotalCents    Int
   deliveryFeeCents Int    @default(0)
   serviceFeeCents  Int    @default(0)
-  /// Kupon indirimi (pozitif cent). Toplamdan DÜŞÜLÜR ve KDV matrahını da
-  /// düşürür — indirim, satılan yemeğin bedelini azaltır.
+  /// Kampanya indirimlerinin toplamı (pozitif cent). Toplamdan DÜŞÜLÜR ve KDV
+  /// matrahını da düşürür — indirim, satılan yemeğin bedelini azaltır.
   discountCents    Int    @default(0)
-  /// Kullanılan kuponun kodu, sipariş anındaki hâliyle. Kupon sonradan
-  /// silinse bile faturada hangi kodun uygulandığı okunabilmeli.
+  /// Müşterinin girdiği kampanya kodu, sipariş anındaki hâliyle. Kampanya
+  /// sonradan silinse bile faturada hangi kodun uygulandığı okunabilmeli.
   couponCode       String @default("")
+  /// Uygulanan kampanyaların dökümü, sipariş anında DONDURULUR:
+  /// [{ code, title, titleTr, amountCents }]. Toplamı `discountCents`'e eşittir.
+  /// Bir siparişe birden çok kampanya binebilir (ayın ürünü + menü fiyatı +
+  /// kod); takip sayfası ve e-posta her birini ayrı satırda gösterir.
+  discountLines    Json   @default("[]")
   /// Bahşiş (pozitif cent). Toplama EKLENİR ama KDV matrahına GİRMEZ:
   /// Abschn. 10.1 Abs. 5 UStAE uyarınca personele gönüllü verilen bahşiş
   /// işletmenin edimi için ödenen bedelin parçası değildir. Bkz. lib/orders/tip.ts.
@@ -389,8 +394,10 @@ model Order {
   lines      OrderLine[]
   events     OrderEvent[]
   payments   Payment[]
-  /// Kupon kullanıldıysa tek satır. Sipariş başına en fazla bir kupon.
-  redemption CouponRedemption?
+  /// Siparişe binen her kampanya için bir satır. Kod girilen kampanya en
+  /// fazla bir tanedir; otomatik kampanyalar (ayın ürünü, menü fiyatı) yanına
+  /// eklenebilir.
+  redemptions CouponRedemption[]
 
   @@index([status, createdAt])
   @@index([createdAt])
@@ -507,26 +514,52 @@ model OrderCounter {
  * ═══════════════════════════════════════════════════════════════════ kupon
  */
 
-/// İndirim kuponu (Gutscheincode).
+/// Kampanya (panelde "Kampanyalar"; eskiden yalnızca indirim kuponuydu).
+///
+/// Tablo adı `Coupon` olarak kaldı: yeniden adlandırmak, geçmiş siparişlerin
+/// bağlı olduğu tabloyu taşımak demekti ve kazandırdığı tek şey bir isimdi.
+///
+/// Dört tür var (`kind`): sepete yüzde ya da sabit indirim, bir ürüne özel
+/// fiyat ("ayın ürünü") ve ürün birleşimine özel fiyat ("menü fiyatı").
 ///
 /// Kural tablosudur, para kasası değil: burada bir bakiye tutulmaz. Her sipariş
-/// kendi indirimini kupon kuralından **yeniden hesaplar** ve hesaplanan tutar
-/// siparişe kopyalanır (`Order.discountCents`). Kupon yarın değişse ya da
-/// silinse bile dün verilen siparişin indirimi değişmez — sipariş satırındaki
-/// fiyat kopyası kuralının aynısı.
+/// kendi indirimini kuraldan **yeniden hesaplar** ve hesaplanan tutar siparişe
+/// kopyalanır (`Order.discountCents`, `Order.discountLines`). Kampanya yarın
+/// değişse ya da silinse bile dün verilen siparişin indirimi değişmez.
 ///
 /// Kod **büyük harfe indirgenmiş** hâliyle saklanır: "doener10" ve "DOENER10"
-/// aynı kupondur, müşteri kodu e-postadan kopyalarken harf durumuyla
-/// uğraşmasın.
+/// aynı koddur. Kodu **boş** (null) olan kampanya otomatiktir: koşulları
+/// tutan her sepete kendiliğinden uygulanır ve menüde duyurulur.
 model Coupon {
   id   String     @id @default(cuid())
-  code String     @unique
+  /// null = otomatik kampanya, kod gerekmez. Postgres'te NULL'lar benzersizlik
+  /// kısıtına takılmaz; birden çok otomatik kampanya yan yana durabilir.
+  code String?    @unique
   kind CouponKind
 
-  /// PERCENT'te yüzde (1–100), FIXED'de cent. İki anlamı tek alanda taşımak
-  /// bilinçli: her iki durumda da "kuponun büyüklüğü" budur ve doğrulama
+  /// Müşteriye görünen ad ("Monatsangebot: Dürüm"). Almancası `title`,
+  /// Türkçesi `titleTr`; biri boşsa öteki kullanılır. Otomatik kampanyada en
+  /// az biri zorunlu — menüde adı olmayan bir kampanya duyurulamaz.
+  title   String @default("")
+  titleTr String @default("")
+
+  /// Kampanyanın büyüklüğü; anlamı `kind`'a göre değişir:
+  ///  - PERCENT: yüzde (1–100)
+  ///  - FIXED: indirilen tutar (cent)
+  ///  - PRODUCT_PRICE: ürünün kampanya fiyatı (cent, adet başına)
+  ///  - BUNDLE_PRICE: birleşimin toplam fiyatı (cent, set başına)
+  /// Tek alan bilinçli: her durumda "kampanyanın sayısı" budur ve doğrulama
   /// `kind`'a bakarak yapılır (bkz. lib/orders/coupon.ts).
   value Int
+
+  /// Ürüne bağlı türlerde kampanyanın ürünleri:
+  /// [{ productId, variantSize?, qty }]. `variantSize` boşsa ürünün bütün
+  /// boyları geçerlidir; `qty` yalnızca menü fiyatında anlamlıdır (setteki
+  /// adet). Sepet indirimlerinde boş dizidir.
+  ///
+  /// İlişki tablosu değil JSON: ürün silinirse kampanya kırılmasın, yalnızca o
+  /// ürünü bulamasın — sipariş hesabı bulamadığı ürünü zaten sepette görmez.
+  items Json @default("[]")
 
   /// Kuponun geçerli olduğu asgari ara toplam. 0 = eşik yok.
   minOrderCents    Int @default(0)
@@ -554,23 +587,25 @@ model Coupon {
   redemptions CouponRedemption[]
 }
 
-/// Kuponun bir siparişte kullanılması.
+/// Kampanyanın bir siparişte kullanılması.
 ///
-/// Denetim izidir: hangi kupon hangi siparişte kaç cent indirim yaptı. Sipariş
-/// başına tekil kısıt, aynı siparişe ikinci bir kupon yazılmasını veritabanı
-/// seviyesinde imkânsız kılar.
+/// Denetim izidir: hangi kampanya hangi siparişte kaç cent indirim yaptı. Bir
+/// siparişe birden çok kampanya binebilir, ama **aynı kampanya iki kez
+/// binemez** — kısıt veritabanında.
 model CouponRedemption {
   id       String @id @default(cuid())
   couponId String
   coupon   Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
-  orderId  String @unique
+  orderId  String
   order    Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   /// Uygulanan indirim (cent), sipariş anındaki hâliyle.
   amountCents Int
   createdAt   DateTime @default(now())
 
+  @@unique([couponId, orderId])
   @@index([couponId, createdAt])
+  @@index([orderId])
 }
 
 /**
@@ -937,12 +972,16 @@ enum Fulfillment {
   PICKUP
 }
 
-/// Kuponun indirimi nasıl hesapladığı.
+/// Kampanyanın indirimi nasıl hesapladığı.
 enum CouponKind {
   /// `value` yüzdedir (1–100); ara toplamdan o oranda indirilir.
   PERCENT
   /// `value` cent'tir; sabit tutar indirilir.
   FIXED
+  /// "Ayın ürünü": `items` içindeki ürün(ler)in adet fiyatı `value` olur.
+  PRODUCT_PRICE
+  /// "Menü fiyatı": `items` birlikte sepetteyse set başına `value` ödenir.
+  BUNDLE_PRICE
 }
 
 enum OrderStatus {

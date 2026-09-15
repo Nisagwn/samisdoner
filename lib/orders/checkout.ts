@@ -5,8 +5,9 @@ import {
   type VatBucket,
 } from "@/lib/admin/store";
 import { checkOrderability, deliveryFeeFor, type RejectionReason } from "./availability";
-import { evaluateCoupon, type CouponRejection } from "./coupon";
-import { findCouponRule } from "./coupons";
+import { applyCampaigns, campaignTitle } from "./campaign";
+import { normalizeCouponCode, type CouponRejection } from "./coupon";
+import { findCouponRule, listAutomaticRules } from "./coupons";
 import { clampTip } from "./tip";
 import { composeTotals } from "./totals";
 
@@ -37,15 +38,35 @@ export type CheckoutZone = {
   etaMinutes: number;
 };
 
+/** Teklife binen bir kampanya. */
+export type QuoteCampaign = {
+  /** Kampanya kaydının kimliği; kullanım kaydı buna yazılır. */
+  id: string;
+  /** Kodla gelen kampanyada kod; otomatikte boş. */
+  code: string;
+  /** Müşterinin dilindeki ad; ikisi de boşsa boş (ekran "İndirim" yazar). */
+  title: string;
+  /** Siparişe dondurulacak iki dil. */
+  titleDe: string;
+  titleTr: string;
+  amountCents: number;
+};
+
 export type CheckoutQuote = {
   lines: PricedLine[];
   subtotalCents: number;
   serviceFeeCents: number;
   /** Kurye ücreti. Gel-alda ve bölge seçilmemişken 0. */
   deliveryFeeCents: number;
-  /** Uygulanan kupon indirimi (pozitif cent); kupon yoksa 0. */
+  /** Bütün kampanya indirimlerinin toplamı (pozitif cent); yoksa 0. */
   discountCents: number;
-  /** Kabul edilen kuponun kodu; kupon yoksa ya da reddedildiyse boş. */
+  /** İndirim yapan kampanyalar, ayrı ayrı. Toplamları `discountCents`. */
+  campaigns: QuoteCampaign[];
+  /** Sepet indirimi (yüzde / sabit) payı; bütün satırlara oransal dağıtılır. */
+  cartDiscountCents: number;
+  /** Satır başına ürün indirimi, `lines` ile aynı sırada. Siparişe aynen geçer. */
+  lineDiscountCents: number[];
+  /** Kabul edilen kodun kendisi; kod yoksa ya da reddedildiyse boş. */
   couponCode: string;
   /** Kod girildi ama kabul edilmediyse sebebi; aksi hâlde null. */
   couponRejection: CouponRejection | null;
@@ -98,20 +119,36 @@ export async function buildCheckoutQuote(input: {
   const deliveryFeeCents = zone ? deliveryFeeFor(zone, quote.subtotalCents) : 0;
 
   /*
-   * Kupon.
+   * Kampanyalar.
    *
-   * Reddedilen kupon **akışı durdurmaz**: indirim 0 kalır, sebep ayrı bir
+   * Otomatik olanlar (ayın ürünü, menü fiyatı) her teklifte, kodlu olan
+   * yalnızca müşteri kod girdiyse okunur; ikisinin birleşimi saf
+   * `applyCampaigns` içinde.
+   *
+   * Reddedilen kod **akışı durdurmaz**: kodun indirimi 0 kalır, sebep ayrı bir
    * alanda taşınır ve müşteri kod alanının altında görür. Geçersiz bir kod
    * yüzünden "sipariş verilemez" demek, kodu silmeyi bilmeyen müşteriyi
-   * sepette kilitler.
+   * sepette kilitler. Otomatik kampanyalar bundan etkilenmez.
    */
-  const code = (input.couponCode ?? "").trim();
-  const coupon = code
-    ? evaluateCoupon(await findCouponRule(code), {
-        subtotalCents: quote.subtotalCents,
-        fulfillment: input.fulfillment,
-      })
-    : null;
+  const code = normalizeCouponCode(input.couponCode ?? "");
+  const [automatic, coded] = await Promise.all([
+    listAutomaticRules(),
+    code ? findCouponRule(code) : Promise.resolve(null),
+  ]);
+  const campaigns = applyCampaigns({
+    automatic,
+    coded,
+    enteredCode: code,
+    lines: quote.lines.map((line) => ({
+      productId: line.input.productId,
+      variantSize: line.input.variantSize,
+      unitBaseCents: line.baseUnitCents ?? line.unitCents,
+      qty: line.qty,
+      unavailable: line.unavailable,
+    })),
+    subtotalCents: quote.subtotalCents,
+    fulfillment: input.fulfillment,
+  });
 
   /*
    * Toplam ve KDV dökümü, siparişe yazılanla **aynı fonksiyondan** üretilir
@@ -123,7 +160,8 @@ export async function buildCheckoutQuote(input: {
     subtotalCents: quote.subtotalCents,
     serviceFeeCents: quote.serviceFeeCents,
     deliveryFeeCents,
-    discountCents: coupon?.ok ? coupon.discountCents : 0,
+    discountCents: campaigns.cartDiscountCents,
+    lineDiscountCents: campaigns.lineDiscountCents,
     tipCents: clampTip(input.tipCents, quote.subtotalCents),
   });
 
@@ -133,8 +171,18 @@ export async function buildCheckoutQuote(input: {
     serviceFeeCents: totals.serviceFeeCents,
     deliveryFeeCents: totals.deliveryFeeCents,
     discountCents: totals.discountCents,
-    couponCode: coupon?.ok ? coupon.code : "",
-    couponRejection: coupon && !coupon.ok ? coupon.reason : null,
+    campaigns: campaigns.applied.map(({ rule, amountCents }) => ({
+      id: rule.id ?? "",
+      code: rule.code,
+      title: campaignTitle(rule, input.lang),
+      titleDe: campaignTitle(rule, "de"),
+      titleTr: campaignTitle(rule, "tr"),
+      amountCents,
+    })),
+    cartDiscountCents: campaigns.cartDiscountCents,
+    lineDiscountCents: campaigns.lineDiscountCents,
+    couponCode: campaigns.code,
+    couponRejection: campaigns.codeRejection,
     tipCents: totals.tipCents,
     totalCents: totals.totalCents,
     remainingForFreeServiceCents: quote.remainingForFreeServiceCents,

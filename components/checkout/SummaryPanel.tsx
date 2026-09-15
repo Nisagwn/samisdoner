@@ -76,21 +76,20 @@ export function SummaryPanel({
         )}
 
         {/*
-          İndirim eksi işaretle ve ayırt edici renkle. Kupon kodu etiketin
-          içinde: müşteri "hangi kod geçti" sorusunu özete bakarak
-          cevaplayabilmeli.
+          Her kampanya ayrı satırda, eksi işaretle ve ayırt edici renkle.
+          Kampanya adı ve varsa kodu etiketin içinde: müşteri "ayın ürünü mü
+          geçti, kodum mu" sorusunu özete bakarak cevaplayabilmeli.
         */}
-        {quote.discountCents > 0 && (
+        {quote.campaigns.map((campaign) => (
           <SummaryRow
-            label={
-              quote.couponCode
-                ? `${t.orderFlow.summaryDiscount} · ${quote.couponCode}`
-                : t.orderFlow.summaryDiscount
-            }
-            value={`−${formatCents(quote.discountCents)}`}
+            key={campaign.id}
+            label={[campaign.title || t.orderFlow.summaryDiscount, campaign.code]
+              .filter(Boolean)
+              .join(" · ")}
+            value={`−${formatCents(campaign.amountCents)}`}
             tone="good"
           />
-        )}
+        ))}
 
         {/*
           Bahşiş ayrı satır ve toplamın içinde; KDV dökümünün dışında

@@ -435,6 +435,16 @@ export default function CartDrawer() {
               </span>
             </div>
 
+            {/* Otomatik kampanyalar (ayın ürünü, menü fiyatı) burada da
+                görünür: müşteri menü setini tamamladığında kazancı sepette
+                görsün, ödeme ekranında sürpriz olarak değil. */}
+            {totalsReady && quote.discountCents > 0 && (
+              <p className="-mt-2 mb-4 flex justify-between gap-3 text-xs text-herb">
+                <span>{t.ordering.cart.campaignSavings}</span>
+                <span className="font-mono tabular-nums">−{formatCents(quote.discountCents)}</span>
+              </p>
+            )}
+
             {/* Ücretler ödeme sayfasında, posta kodu seçildikten sonra
                 netleşir. Burada söylenmezse müşteri tutarın orada büyümesini
                 sürpriz olarak yaşar. */}

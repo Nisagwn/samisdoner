@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { badRequest, notFound, requirePermission, storeWrite } from "@/lib/admin/guard";
-import { retireCoupon, updateCoupon, type CouponInput } from "@/lib/orders/coupons";
-import { couponPatchSchema } from "@/lib/orders/schema";
+import {
+  couponInputFromBody,
+  retireCoupon,
+  updateCoupon,
+  validateCampaignItems,
+} from "@/lib/orders/coupons";
+import { couponSchema } from "@/lib/orders/schema";
 
 /**
- * Tek kuponun düzenlenmesi ve kaldırılması.
+ * Tek kampanyanın düzenlenmesi ve kaldırılması.
  *
  * YETKİ: `catalog` — gerekçesi kardeş dosyada (../route.ts).
  */
@@ -14,6 +19,10 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: { id: string } };
 
+/**
+ * Düzenleme **bütün alanları** ister (bkz. `couponSchema` notu): alanların
+ * anlamı türe bağlı ve kısmi bir yama türü değiştirip değeri eski bırakabilir.
+ */
 export async function PATCH(request: Request, { params }: Params) {
   const denied = await requirePermission("catalog");
   if (denied instanceof NextResponse) return denied;
@@ -25,36 +34,28 @@ export async function PATCH(request: Request, { params }: Params) {
     return badRequest("Geçersiz istek gövdesi.");
   }
 
-  const parsed = couponPatchSchema.safeParse(body);
+  const parsed = couponSchema.safeParse(body);
   if (!parsed.success) {
-    return badRequest(parsed.error.issues[0]?.message ?? "Geçersiz kupon.");
+    return badRequest(parsed.error.issues[0]?.message ?? "Geçersiz kampanya.");
   }
 
-  /*
-   * Zod çıktısı tarihleri metin olarak taşıyor; veri katmanı `Date` bekliyor.
-   * Alan **gönderilmediyse** yamaya hiç konmaz (`undefined`), gönderilip null
-   * ise temizlenir — ikisi farklı şey: "bu alana dokunma" ile "bu alanı boşalt".
-   */
-  const { startsAt, expiresAt, ...rest } = parsed.data;
-  const patch: Partial<CouponInput> = {
-    ...rest,
-    ...(startsAt !== undefined ? { startsAt: startsAt ? new Date(startsAt) : null } : {}),
-    ...(expiresAt !== undefined ? { expiresAt: expiresAt ? new Date(expiresAt) : null } : {}),
-  };
+  const input = couponInputFromBody(parsed.data);
+  const itemProblem = await validateCampaignItems(input.items);
+  if (itemProblem) return badRequest(itemProblem);
 
-  const updated = await storeWrite(() => updateCoupon(params.id, patch));
+  const updated = await storeWrite(() => updateCoupon(params.id, input));
   if (updated instanceof NextResponse) return updated;
-  if (!updated) return notFound("Kupon bulunamadı.");
+  if (!updated) return notFound("Kampanya bulunamadı.");
   return NextResponse.json(updated);
 }
 
 /**
- * Kuponu kaldırır.
+ * Kampanyayı kaldırır.
  *
- * Kullanılmışsa silinmez, **pasifleştirilir**: sipariş geçmişi kuponun kaydına
+ * Kullanılmışsa silinmez, **pasifleştirilir**: sipariş geçmişi kaydına
  * bakıyor ve silmek o bağı koparırdı. İşletmeci açısından ikisi de aynı sonucu
- * verir — kod artık çalışmaz — ama hangi yolun seçildiği yanıtta bildirilir ki
- * panel doğru mesajı gösterebilsin.
+ * verir — kampanya artık çalışmaz — ama hangi yolun seçildiği yanıtta
+ * bildirilir ki panel doğru mesajı gösterebilsin.
  */
 export async function DELETE(_request: Request, { params }: Params) {
   const denied = await requirePermission("catalog");
@@ -62,7 +63,7 @@ export async function DELETE(_request: Request, { params }: Params) {
 
   const result = await storeWrite(() => retireCoupon(params.id));
   if (result instanceof NextResponse) return result;
-  if (!result) return notFound("Kupon bulunamadı.");
+  if (!result) return notFound("Kampanya bulunamadı.");
 
   return NextResponse.json({ ok: true, outcome: result.kind });
 }

@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
 import Products from "@/components/Products";
 import MenuGrid from "@/components/MenuGrid";
+import CampaignStrip from "@/components/CampaignStrip";
 import Footer from "@/components/Footer";
 import { getFeaturedProducts, getMenuSections } from "@/lib/admin/store";
+import { getMenuCampaigns } from "@/lib/orders/coupons";
 
 /**
  * Karta sayfası — sitenin sipariş yüzeyi.
@@ -25,9 +27,10 @@ export const metadata: Metadata = {
 };
 
 export default async function SpeisekartePage() {
-  const [featured, sections] = await Promise.all([
+  const [featured, sections, campaigns] = await Promise.all([
     getFeaturedProducts(3),
     getMenuSections(),
+    getMenuCampaigns(),
   ]);
 
   return (
@@ -37,6 +40,8 @@ export default async function SpeisekartePage() {
       <div className="pt-[var(--nav-h)]">
         <Products products={featured} showMenuLink={false} lead />
       </div>
+      {/* Açık otomatik kampanya yoksa şerit hiç çıkmaz. */}
+      <CampaignStrip campaigns={campaigns} />
       <MenuGrid sections={sections} />
       <Footer />
     </main>

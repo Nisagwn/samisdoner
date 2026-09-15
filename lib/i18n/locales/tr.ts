@@ -476,6 +476,25 @@ export const trTranslations = {
       /** Teslim biçimi anahtarı sepette de var: ücretler buna göre değişiyor. */
       fulfillmentHint: "Teslimat ücreti ve minimum tutar teslim biçimine göre değişir.",
       zipHint: "Posta kodunu ödeme adımında seçeceksin.",
+      /** Otomatik kampanyaların sepet çekmecesindeki toplamı. */
+      campaignSavings: "Kampanya indirimi",
+    },
+
+    /** Menü sayfasındaki otomatik kampanya şeridi. */
+    campaigns: {
+      title: "Kampanyalar",
+      lead: "Sepetine kendiliğinden uygulanır — kod gerekmez.",
+      productPrice: "{products} şimdi {price}",
+      bundle: "{items} birlikte {price}",
+      percent: "Siparişte %{value} indirim",
+      percentMax: "(en fazla {amount})",
+      fixed: "Siparişte {amount} indirim",
+      instead: "yerine {price}",
+      minOrder: "{amount} üzeri siparişlerde",
+      deliveryOnly: "Yalnızca teslimatta",
+      pickupOnly: "Yalnızca gel-al'da",
+      until: "{date} tarihine kadar",
+      extrasNote: "Ekstra seçimler ayrıca ücretlendirilir.",
     },
   },
   /*
@@ -535,6 +554,9 @@ export const trTranslations = {
     couponWrongPickup: "Bu kod yalnızca gel-al siparişlerinde geçerli.",
     couponBelowMinimum: "Bu kod {amount} ve üzeri siparişlerde geçerli.",
     couponGone: "Bu kodun son kullanım hakkı az önce tükendi. Kodu kaldırıp tekrar deneyin.",
+    couponNoItems: "Bu kodun geçerli olduğu ürünler sepetinizde yok.",
+    campaignGone:
+      "Sepetinizdeki bir kampanya az önce sona erdi. Tutar güncellendi; lütfen kontrol edip yeniden onaylayın.",
 
     /* --- özet satırları --- */
     summaryDiscount: "İndirim",

@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { formatCents } from "@/lib/money";
 import { BUSINESS_INFO } from "@/data/businessInfo";
 import { describeCancelReason } from "@/lib/orders/cancelReasons";
+import { readDiscountLines } from "@/lib/orders/campaign";
 import type { OrderWithDetails } from "@/lib/orders/repository";
 import { orderTrackingUrl } from "@/lib/orders/token";
 import { SITE_URL } from "@/lib/site";
@@ -93,11 +94,18 @@ function linesTable(order: OrderWithDetails): string {
     fees.push(feeRow("Servicegebühr", order.serviceFeeCents));
   }
   /*
-   * İndirim eksi işaretle yazılır. Kupon kodu da satırda görünür: müşteri
-   * "kodum geçti mi" sorusunu faturaya bakarak cevaplayabilmeli.
+   * İndirim eksi işaretle, kampanya başına bir satır. Kampanya adı ve kodu
+   * satırda görünür: müşteri "Aktion mı geçti, kodum mu" sorusunu faturaya
+   * bakarak cevaplayabilmeli. Ad panelden yazıldığı için kaçışlanır.
    */
-  if (order.discountCents > 0) {
-    const label = order.couponCode ? `Gutschein ${order.couponCode}` : "Gutschein";
+  const discountLines = readDiscountLines(order.discountLines);
+  if (discountLines.length > 0) {
+    for (const line of discountLines) {
+      const label = [line.title || line.titleTr || "Rabatt", line.code].filter(Boolean).join(" · ");
+      fees.push(feeRow(escapeHtml(label), -line.amountCents));
+    }
+  } else if (order.discountCents > 0) {
+    const label = order.couponCode ? `Gutschein ${escapeHtml(order.couponCode)}` : "Gutschein";
     fees.push(feeRow(label, -order.discountCents));
   }
   if (order.tipCents > 0) {

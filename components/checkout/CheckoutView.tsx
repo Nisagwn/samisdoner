@@ -77,6 +77,12 @@ export function CheckoutView() {
   /** Sunucuya gönderilen kod. Alana yazılan taslak `CouponField` içinde durur. */
   const [couponCode, setCouponCode] = useState("");
   /**
+   * Teklifi girdiler değişmeden yeniden istemek için sayaç. Otomatik bir
+   * kampanya sipariş anında bittiğinde (`campaign_gone`) ekrandaki tutar
+   * eskidir; müşteri yeni tutarı görmeden yeniden onaylamamalı.
+   */
+  const [quoteRevision, setQuoteRevision] = useState(0);
+  /**
    * Hesaba kayıtlı adresler.
    *
    * Misafir akışında boş kalır (uç 401 döner) ve seçici hiç görünmez; üyelik
@@ -113,7 +119,7 @@ export function CheckoutView() {
    * çalışmaya devam eder.
    */
   const { quote, pricing } = useCheckoutQuote(
-    { lines, lang, fulfillment, zip, couponCode, tipCents, requestedAt },
+    { lines, lang, fulfillment, zip, couponCode, tipCents, requestedAt, revision: quoteRevision },
     loaded
   );
 
@@ -360,6 +366,8 @@ export function CheckoutView() {
         return t.orderFlow.errPaymentMethod;
       case "coupon_gone":
         return t.orderFlow.couponGone;
+      case "campaign_gone":
+        return t.orderFlow.campaignGone;
       /*
        * Kupon ret sebepleri sipariş düğmesine basıldığında da dönebilir:
        * müşteri kodu girdikten sonra sepetten ürün çıkarıp asgari tutarın
@@ -374,6 +382,7 @@ export function CheckoutView() {
       case "coupon_exhausted":
       case "coupon_wrong_fulfillment":
       case "coupon_below_minimum":
+      case "coupon_no_items":
         return describeRejection(error, t);
     }
   };
@@ -460,6 +469,7 @@ export function CheckoutView() {
       if (!result.ok) {
         setSubmitError(errorMessage(result.error));
         setSubmitting(false);
+        if (result.error.code === "campaign_gone") setQuoteRevision((revision) => revision + 1);
         return;
       }
 
@@ -742,7 +752,12 @@ export function CheckoutView() {
 
             <CouponField
               appliedCode={quote?.couponCode ?? ""}
-              discountCents={quote?.discountCents ?? 0}
+              // Yalnızca kodun kendi indirimi: otomatik kampanyalar kod
+              // alanında "uygulandı" gibi görünmesin.
+              discountCents={
+                quote?.campaigns.find((campaign) => campaign.code !== "" && campaign.code === quote.couponCode)
+                  ?.amountCents ?? 0
+              }
               rejection={quote?.couponRejection ?? null}
               checking={pricing === "loading"}
               onApply={setCouponCode}

@@ -201,7 +201,11 @@ export async function createOrderAction(input: unknown): Promise<CreateOrderResu
     subtotalCents: quote.subtotalCents,
     serviceFeeCents: quote.serviceFeeCents,
     deliveryFeeCents,
-    discountCents: quote.discountCents,
+    // Sepet ve ürün indirimleri ayrı gider: ürün indirimi kendi satırının
+    // KDV matrahından düşülüyor (bkz. composeTotals).
+    discountCents: quote.cartDiscountCents,
+    lineDiscountCents: quote.lineDiscountCents,
+    campaigns: quote.campaigns,
     couponCode: quote.couponCode,
     tipCents: quote.tipCents,
     paymentMethod,
@@ -227,12 +231,13 @@ export async function createOrderAction(input: unknown): Promise<CreateOrderResu
     });
   } catch (error) {
     /*
-     * Kupon, teklif ile sipariş yazımı arasında elden kaçtı. Sipariş hiç
-     * oluşmadı (kullanım kaydı ile sipariş aynı işlemde) — müşteri kodu
-     * silip tekrar deneyebilir.
+     * Kampanya, teklif ile sipariş yazımı arasında elden kaçtı. Sipariş hiç
+     * oluşmadı (kullanım kaydı ile sipariş aynı işlemde). Kodluysa müşteri
+     * kodu silip tekrar dener; otomatikse ödeme ekranı teklifi yeniler ve
+     * müşteri yeni tutarı görüp yeniden onaylar.
      */
     if (error instanceof CouponUnavailableError) {
-      return { ok: false, error: { code: "coupon_gone" } };
+      return { ok: false, error: { code: error.automatic ? "campaign_gone" : "coupon_gone" } };
     }
     throw error;
   }
@@ -283,10 +288,11 @@ export async function createOrderAction(input: unknown): Promise<CreateOrderResu
       tipCents: quote.tipCents,
       tipLabel: lang === "de" ? "Trinkgeld" : "Bahşiş",
       discountCents: quote.discountCents,
-      discountLabel:
-        lang === "de"
-          ? `Gutschein ${quote.couponCode}`
-          : `İndirim kuponu ${quote.couponCode}`,
+      // Stripe indirim adı en fazla 40 karakter kabul ediyor.
+      discountLabel: (
+        quote.campaigns.map((campaign) => campaign.title || campaign.code).filter(Boolean).join(" + ") ||
+        (lang === "de" ? "Rabatt" : "İndirim")
+      ).slice(0, 40),
       totalCents: order.totalCents,
       email: customer.email || account?.email || undefined,
       lang,

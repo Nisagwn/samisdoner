@@ -24,6 +24,12 @@ export type OrderError =
    * son kullanım hakkı aradan geçen saniyelerde başkasına gitti.
    */
   | { code: "coupon_gone" }
+  /**
+   * Otomatik bir kampanya (ayın ürünü, menü fiyatı) sipariş yazılırken bitti.
+   * Müşterinin yapacağı bir şey yok; güncel tutarı görüp yeniden onaylaması
+   * gerekiyor.
+   */
+  | { code: "campaign_gone" }
   /** Aynı kaynaktan çok sayıda sipariş denemesi; `retryAfterSeconds` sonra tekrar. */
   | { code: "too_many_requests"; retryAfterSeconds: number }
   | RejectionReason

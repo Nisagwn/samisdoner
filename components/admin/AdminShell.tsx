@@ -92,14 +92,14 @@ const NAV_GROUPS: {
       },
       {
         /*
-         * Kupon, menünün hemen altında ve `catalog` yetkisinde: kampanya açmak
-         * fiyat belirlemenin bir biçimi ve hatasının bedeli de aynı — yanlış
-         * girilmiş bir kupon günlerce fark edilmeden her siparişte para
-         * kaybettirir.
+         * Kampanyalar, menünün hemen altında ve `catalog` yetkisinde: kampanya
+         * açmak fiyat belirlemenin bir biçimi ve hatasının bedeli de aynı —
+         * yanlış girilmiş bir kampanya günlerce fark edilmeden her siparişte
+         * para kaybettirir.
          */
         href: "/admin/gutscheine",
-        label: "İndirim kuponları",
-        hint: "Kampanya kodları, geçerlilik",
+        label: "Kampanyalar",
+        hint: "Ayın ürünü, menü fiyatı, indirim kodu",
         exact: false,
         permission: "catalog" as const,
       },

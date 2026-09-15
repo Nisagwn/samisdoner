@@ -72,6 +72,12 @@ export const CACHE_KEYS = {
    * uyan iş yükü bu.
    */
   reviews: "reviews",
+  /**
+   * Otomatik kampanyalar (kodsuz). Sepetin her fiyat teklifinde ve menü
+   * sayfasında okunur. Kullanım sayacı bayat kalabilir; sınır zaten sipariş
+   * yazılırken koşullu UPDATE ile uygulanıyor (bkz. `redeemCoupon`).
+   */
+  campaigns: "campaigns",
 } as const;
 
 export type CacheKey = (typeof CACHE_KEYS)[keyof typeof CACHE_KEYS];

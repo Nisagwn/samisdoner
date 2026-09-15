@@ -5,7 +5,9 @@ import {
   type PaymentMethod,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { CACHE_KEYS, invalidate } from "@/lib/cache";
 import type { PricedLine, VatBucket } from "@/lib/admin/store";
+import type { DiscountLine } from "./campaign";
 import { redeemCoupon } from "./coupons";
 import { InvalidTransitionError, canTransition } from "./status";
 import { composeTotals } from "./totals";
@@ -76,9 +78,25 @@ export type CreateOrderData = {
   subtotalCents: number;
   serviceFeeCents: number;
   deliveryFeeCents: number;
-  /** Kupon indirimi (pozitif cent); kupon yoksa 0. */
+  /**
+   * **Sepet** indirimi (yüzde / sabit kampanya), pozitif cent; yoksa 0.
+   * Ürün indirimleri `lineDiscountCents` ile ayrı gelir.
+   */
   discountCents: number;
-  /** Kabul edilen kuponun kodu; kupon yoksa boş. */
+  /** Satır başına ürün indirimi (ayın ürünü, menü fiyatı); `lines` ile aynı sırada. */
+  lineDiscountCents?: number[];
+  /**
+   * Uygulanan kampanyalar. Her biri için kullanım kaydı yazılır ve döküm
+   * siparişe dondurulur (`Order.discountLines`).
+   */
+  campaigns?: {
+    id: string;
+    code: string;
+    titleDe: string;
+    titleTr: string;
+    amountCents: number;
+  }[];
+  /** Kabul edilen kodun kendisi; kod yoksa boş. */
   couponCode: string;
   /** Bahşiş (pozitif cent). Toplama eklenir, KDV matrahına girmez. */
   tipCents: number;
@@ -136,12 +154,21 @@ export async function createOrder(data: CreateOrderData) {
     serviceFeeCents: data.serviceFeeCents,
     deliveryFeeCents: data.deliveryFeeCents,
     discountCents: data.discountCents,
+    lineDiscountCents: data.lineDiscountCents,
     tipCents: data.tipCents,
   });
   const vatBreakdown: VatBucket[] = totals.vatBreakdown;
   const totalCents = totals.totalCents;
 
-  return prisma.$transaction(async (tx) => {
+  const campaigns = (data.campaigns ?? []).filter((campaign) => campaign.amountCents > 0);
+  const discountLines: DiscountLine[] = campaigns.map((campaign) => ({
+    code: campaign.code,
+    title: campaign.titleDe,
+    titleTr: campaign.titleTr,
+    amountCents: campaign.amountCents,
+  }));
+
+  const order = await prisma.$transaction(async (tx) => {
     const orderNo = await nextOrderNo(tx);
 
     const order = await tx.order.create({
@@ -168,6 +195,7 @@ export async function createOrder(data: CreateOrderData) {
         deliveryFeeCents: totals.deliveryFeeCents,
         discountCents: totals.discountCents,
         couponCode: totals.discountCents > 0 ? data.couponCode : "",
+        discountLines: discountLines as unknown as Prisma.InputJsonValue,
         tipCents: totals.tipCents,
         totalCents,
         vatBreakdown: vatBreakdown as unknown as Prisma.InputJsonValue,
@@ -196,38 +224,48 @@ export async function createOrder(data: CreateOrderData) {
     });
 
     /*
-     * Kupon kullanımı **aynı işlemin içinde** yazılır.
+     * Kampanya kullanımları **aynı işlemin içinde** yazılır.
      *
-     * Kullanım sayılamıyorsa (kampanya bu arada tükendi, kupon kapatıldı)
-     * işlem baştan düşer ve sipariş hiç oluşmaz. Alternatifi, indirimi
-     * uygulanmış ama kullanımı sayılmamış bir sipariş bırakmaktı: 50
-     * kullanımlık bir kampanyanın 60 kez indirim yapması demek.
+     * Kullanım sayılamıyorsa (kampanya bu arada tükendi, kapatıldı) işlem
+     * baştan düşer ve sipariş hiç oluşmaz. Alternatifi, indirimi uygulanmış
+     * ama kullanımı sayılmamış bir sipariş bırakmaktı: 50 kullanımlık bir
+     * kampanyanın 60 kez indirim yapması demek.
      */
-    if (totals.discountCents > 0 && data.couponCode) {
+    for (const campaign of campaigns) {
       const redeemed = await redeemCoupon(tx, {
-        code: data.couponCode,
+        couponId: campaign.id,
         orderId: order.id,
-        amountCents: totals.discountCents,
+        amountCents: campaign.amountCents,
       });
-      if (!redeemed) throw new CouponUnavailableError(data.couponCode);
+      if (!redeemed) throw new CouponUnavailableError(campaign.code);
     }
 
     return order;
   });
+
+  // Kullanım sayaçları değişti; önbellekteki otomatik kampanya listesi
+  // tükenmiş bir kampanyayı gereğinden uzun açık göstermesin.
+  if (campaigns.length > 0) await invalidate(CACHE_KEYS.campaigns);
+
+  return order;
 }
 
 /**
- * Sipariş yazılırken kuponun elden kaçtığını bildirir.
+ * Sipariş yazılırken bir kampanyanın elden kaçtığını bildirir.
  *
- * Müşteri kodu girdiğinde geçerliydi; sipariş yazılana kadar geçen saniyelerde
+ * Teklif hesaplandığında geçerliydi; sipariş yazılana kadar geçen saniyelerde
  * son kullanım hakkı başkasına gitti. Bu bir sunucu arızası değil, yarışın
- * kaybeden tarafı: çağıran taraf müşteriye "kupon artık geçerli değil" der ve
- * sepet kupon olmadan aynen durur.
+ * kaybeden tarafı. `code` boşsa kaçan kampanya otomatiktir (müşterinin
+ * kaldıracağı bir kod yok, yalnızca yeni tutarı görmesi gerekir).
  */
 export class CouponUnavailableError extends Error {
   constructor(readonly code: string) {
-    super(`Kupon kullanılamadı: ${code}`);
+    super(`Kampanya kullanılamadı: ${code || "(otomatik)"}`);
     this.name = "CouponUnavailableError";
+  }
+
+  get automatic(): boolean {
+    return this.code === "";
   }
 }
 

@@ -678,6 +678,12 @@ export type PricedLine = {
   label: string;
   detail: string;
   unitCents: number;
+  /**
+   * Seçenek ek ücretleri **hariç** adet fiyatı (boy fiyatı ya da indirimli
+   * fiyat). Kampanya fiyatı ("ayın ürünü", menü fiyatı) buna uygulanır; ekstra
+   * peynir kampanyada da ücretlidir. Verilmezse `unitCents` sayılır.
+   */
+  baseUnitCents?: number;
   lineCents: number;
   qty: number;
   /** Satırın KDV oranı (7 veya 19); dökümü bu belirler. */
@@ -833,6 +839,7 @@ function priceProductLine(
     label,
     detail,
     unitCents,
+    baseUnitCents: baseCents,
     lineCents: unitCents * qty,
     qty,
     vatRate: product.vatRate,

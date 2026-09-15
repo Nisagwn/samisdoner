@@ -153,5 +153,7 @@ export function describeRejection(
       return rejection.fulfillment === "DELIVERY" ? f.couponWrongDelivery : f.couponWrongPickup;
     case "coupon_below_minimum":
       return f.couponBelowMinimum.replace("{amount}", formatCents(rejection.minOrderCents));
+    case "coupon_no_items":
+      return f.couponNoItems;
   }
 }

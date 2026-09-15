@@ -1,39 +1,65 @@
 /**
- * Gutscheincode — indirim kuponu.
+ * Kampanya kuralı — tek bir kuralın geçerliliği ve sepet indirimi.
  *
- * **Saf mantık**: kupon kuralı + sepet bilgisi girer, indirim tutarı ya da ret
- * sebebi çıkar. Veritabanına dokunmaz ve dokunmamalı — kodu normalleştiren ve
- * ret sebebini cümleye çeviren parçalar ödeme ekranında, yani **istemcide** de
+ * **Saf mantık**: kural + sepet bilgisi girer, indirim tutarı ya da ret sebebi
+ * çıkar. Veritabanına dokunmaz ve dokunmamalı — kodu normalleştiren ve ret
+ * sebebini cümleye çeviren parçalar ödeme ekranında, yani **istemcide** de
  * çalışıyor. Buraya bir `prisma` içe aktarımı girdiği gün veritabanı istemcisi
  * tarayıcı paketine sızar.
  *
- * Kuralı okuyan ve kullanımı yazan veri katmanı ayrı dosyada:
- * `lib/orders/coupons.ts`.
+ * Dosyanın adı tarihsel: başlangıçta yalnızca indirim kuponu vardı. Birden çok
+ * kampanyanın aynı sepette nasıl birleştiği (ayın ürünü, menü fiyatı, kod)
+ * `lib/orders/campaign.ts` içinde; burası tek kuralın kendisi. Kuralı okuyan
+ * ve kullanımı yazan veri katmanı ayrı dosyada: `lib/orders/coupons.ts`.
  *
  * KURAL, BAKİYE DEĞİL
  *
- * Kupon bir kasa değildir: üzerinde para taşımaz. Her sipariş indirimini
+ * Kampanya bir kasa değildir: üzerinde para taşımaz. Her sipariş indirimini
  * kuraldan **yeniden hesaplar** ve sonucu siparişe kopyalar
- * (`Order.discountCents`). Kupon yarın silinse bile dün verilen siparişin
+ * (`Order.discountCents`). Kampanya yarın silinse bile dün verilen siparişin
  * indirimi değişmez — sipariş satırındaki fiyat kopyası kuralının aynısı.
  *
  * İNDİRİM NEYE UYGULANIR
  *
- * Yalnızca **ara toplama** (yemeğin bedeline). Kurye ücreti ve servis bedeli
- * indirimin dışındadır: ikisi de işletmenin cebinden çıkan gerçek maliyetler
- * ve "%20 indirim" diyen bir kampanyanın kuryeyi de ucuzlatması beklenen bir
- * şey değil. İndirim ara toplamı geçemez; sipariş toplamı hiçbir zaman
- * negatife düşmez.
+ * Yalnızca **yemeğin bedeline**. Kurye ücreti ve servis bedeli indirimin
+ * dışındadır: ikisi de işletmenin cebinden çıkan gerçek maliyetler ve "%20
+ * indirim" diyen bir kampanyanın kuryeyi de ucuzlatması beklenen bir şey
+ * değil. İndirim ara toplamı geçemez; sipariş toplamı hiçbir zaman negatife
+ * düşmez.
  */
 
-export type CouponKind = "PERCENT" | "FIXED";
+export type CouponKind = "PERCENT" | "FIXED" | "PRODUCT_PRICE" | "BUNDLE_PRICE";
 
-/** Kuponun kuralları — veritabanı satırının saf mantığı ilgilendiren kısmı. */
+/**
+ * Ürüne bağlı kampanyanın bir kalemi.
+ *
+ * `variantSize` boşsa ürünün bütün boyları sayılır ("her boy Dürüm 6,50 €");
+ * doluysa yalnızca o boy ("gr. Dürüm"). `qty` menü fiyatında setteki adettir
+ * ("2× Ayran"); ürüne özel fiyatta okunmaz.
+ */
+export type CampaignItem = {
+  productId: string;
+  variantSize?: string;
+  qty: number;
+};
+
+/** Kampanyanın kuralları — veritabanı satırının saf mantığı ilgilendiren kısmı. */
 export type CouponRule = {
+  /** Veritabanı kimliği; kullanım kaydı buna yazılır. Testlerde boş kalabilir. */
+  id?: string;
+  /** Otomatik kampanyada boş dize. */
   code: string;
   kind: CouponKind;
-  /** PERCENT'te yüzde (1–100), FIXED'de cent. */
+  /** Müşteriye görünen ad (Almanca / Türkçe); ikisi de boş olabilir. */
+  title?: string;
+  titleTr?: string;
+  /**
+   * PERCENT'te yüzde (1–100), FIXED'de indirilen cent, PRODUCT_PRICE'ta adet
+   * fiyatı (cent), BUNDLE_PRICE'ta set fiyatı (cent).
+   */
   value: number;
+  /** Ürüne bağlı türlerde kampanyanın ürünleri; sepet indiriminde boş. */
+  items?: CampaignItem[];
   minOrderCents: number;
   /** Yüzde kuponunda indirimin tavanı (cent); 0 = tavan yok. */
   maxDiscountCents: number;
@@ -46,6 +72,11 @@ export type CouponRule = {
   redeemedCount: number;
   active: boolean;
 };
+
+/** Ürüne bağlı mı (ayın ürünü, menü fiyatı), yoksa sepetin tamamına mı. */
+export function isItemCampaign(kind: CouponKind): boolean {
+  return kind === "PRODUCT_PRICE" || kind === "BUNDLE_PRICE";
+}
 
 /**
  * Ret sebepleri.
@@ -61,7 +92,9 @@ export type CouponRejection =
   | { code: "coupon_expired"; expiresAt: string }
   | { code: "coupon_exhausted" }
   | { code: "coupon_wrong_fulfillment"; fulfillment: "DELIVERY" | "PICKUP" }
-  | { code: "coupon_below_minimum"; minOrderCents: number; subtotalCents: number };
+  | { code: "coupon_below_minimum"; minOrderCents: number; subtotalCents: number }
+  /** Kod geçerli ama ürüne bağlı ve o ürünler sepette yok. */
+  | { code: "coupon_no_items" };
 
 export type CouponEvaluation =
   | { ok: true; code: string; discountCents: number }
@@ -79,64 +112,69 @@ export function normalizeCouponCode(raw: string): string {
 }
 
 /**
- * Kuponun bu sepette ne kadar indirim yaptığı.
+ * Kural bu sepette geçerli mi — tutardan bağımsız engeller.
  *
- * Sıra bilinçli: önce kuponun kendisiyle ilgili engeller (yok, kapalı,
- * başlamamış, dolmuş, tükenmiş), sonra sepetle ilgili olanlar (teslim biçimi,
- * eşik). Böylece müşterinin gördüğü ilk hata düzeltebileceği en yakın hatadır.
+ * Sıra bilinçli: önce kuralın kendisiyle ilgili engeller (kapalı, başlamamış,
+ * dolmuş, tükenmiş), sonra sepetle ilgili olanlar (teslim biçimi, eşik).
+ * Böylece müşterinin gördüğü ilk hata düzeltebileceği en yakın hatadır.
+ */
+export function couponEligibility(
+  rule: CouponRule,
+  input: { subtotalCents: number; fulfillment: "DELIVERY" | "PICKUP"; now?: Date }
+): CouponRejection | null {
+  if (!rule.active) return { code: "coupon_inactive" };
+
+  const now = input.now ?? new Date();
+
+  if (rule.startsAt && now < rule.startsAt) {
+    return { code: "coupon_not_started", startsAt: rule.startsAt.toISOString() };
+  }
+  if (rule.expiresAt && now >= rule.expiresAt) {
+    return { code: "coupon_expired", expiresAt: rule.expiresAt.toISOString() };
+  }
+  if (rule.maxRedemptions > 0 && rule.redeemedCount >= rule.maxRedemptions) {
+    return { code: "coupon_exhausted" };
+  }
+  if (rule.fulfillment && rule.fulfillment !== input.fulfillment) {
+    return { code: "coupon_wrong_fulfillment", fulfillment: rule.fulfillment };
+  }
+
+  const subtotalCents = Math.max(0, Math.round(input.subtotalCents));
+  if (subtotalCents < rule.minOrderCents) {
+    return {
+      code: "coupon_below_minimum",
+      minOrderCents: rule.minOrderCents,
+      subtotalCents,
+    };
+  }
+  return null;
+}
+
+/**
+ * Sepet indiriminin (yüzde / sabit) bu sepette ne kadar indirdiği.
+ *
+ * Ürüne bağlı kampanyaların tutarı sepetteki satırlara bakmadan bulunamaz;
+ * onlar ve birden çok kampanyanın birleşimi `applyCampaigns` içinde.
  */
 export function evaluateCoupon(
   rule: CouponRule | null,
   input: { subtotalCents: number; fulfillment: "DELIVERY" | "PICKUP"; now?: Date }
 ): CouponEvaluation {
   if (!rule) return { ok: false, reason: { code: "coupon_unknown" } };
-  if (!rule.active) return { ok: false, reason: { code: "coupon_inactive" } };
 
-  const now = input.now ?? new Date();
+  const rejection = couponEligibility(rule, input);
+  if (rejection) return { ok: false, reason: rejection };
 
-  if (rule.startsAt && now < rule.startsAt) {
-    return {
-      ok: false,
-      reason: { code: "coupon_not_started", startsAt: rule.startsAt.toISOString() },
-    };
-  }
-  if (rule.expiresAt && now >= rule.expiresAt) {
-    return {
-      ok: false,
-      reason: { code: "coupon_expired", expiresAt: rule.expiresAt.toISOString() },
-    };
-  }
-  if (rule.maxRedemptions > 0 && rule.redeemedCount >= rule.maxRedemptions) {
-    return { ok: false, reason: { code: "coupon_exhausted" } };
-  }
-  if (rule.fulfillment && rule.fulfillment !== input.fulfillment) {
-    return {
-      ok: false,
-      reason: { code: "coupon_wrong_fulfillment", fulfillment: rule.fulfillment },
-    };
-  }
-
-  const subtotalCents = Math.max(0, Math.round(input.subtotalCents));
-  if (subtotalCents < rule.minOrderCents) {
-    return {
-      ok: false,
-      reason: {
-        code: "coupon_below_minimum",
-        minOrderCents: rule.minOrderCents,
-        subtotalCents,
-      },
-    };
-  }
-
-  return { ok: true, code: rule.code, discountCents: discountFor(rule, subtotalCents) };
+  return { ok: true, code: rule.code, discountCents: discountFor(rule, input.subtotalCents) };
 }
 
 /**
- * Kuralın ara toplama uyguladığı indirim.
+ * Sepet indiriminin verilen tutara uyguladığı indirim.
  *
- * Her iki uçta da kelepçelenir: negatif olamaz ve ara toplamı geçemez.
+ * Her iki uçta da kelepçelenir: negatif olamaz ve tutarı geçemez.
  * Geçebilseydi "toplam −3,20 €" gibi bir sipariş doğar, ödeme sağlayıcısı da
- * onu reddederdi.
+ * onu reddederdi. Ürüne bağlı türler burada 0 döner — tutarları satırlardan
+ * hesaplanır.
  */
 export function discountFor(
   rule: Pick<CouponRule, "kind" | "value" | "maxDiscountCents">,
@@ -150,10 +188,11 @@ export function discountFor(
     const percent = Math.min(100, Math.max(0, Math.round(rule.value)));
     discount = Math.round((base * percent) / 100);
     if (rule.maxDiscountCents > 0) discount = Math.min(discount, rule.maxDiscountCents);
-  } else {
+  } else if (rule.kind === "FIXED") {
     discount = Math.max(0, Math.round(rule.value));
+  } else {
+    return 0;
   }
 
   return Math.min(discount, base);
 }
-

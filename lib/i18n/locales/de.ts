@@ -475,6 +475,23 @@ export const deTranslations: Translations = {
       barItems: "{count} Artikel",
       fulfillmentHint: "Liefergebühr und Mindestbestellwert hängen von der Bestellart ab.",
       zipHint: "Die PLZ wählst du an der Kasse.",
+      campaignSavings: "Aktionsrabatt",
+    },
+
+    campaigns: {
+      title: "Aktionen",
+      lead: "Wird automatisch im Warenkorb abgezogen — ganz ohne Code.",
+      productPrice: "{products} jetzt für {price}",
+      bundle: "{items} zusammen für {price}",
+      percent: "{value} % Rabatt auf die Bestellung",
+      percentMax: "(max. {amount})",
+      fixed: "{amount} Rabatt auf die Bestellung",
+      instead: "statt {price}",
+      minOrder: "ab {amount} Bestellwert",
+      deliveryOnly: "Nur bei Lieferung",
+      pickupOnly: "Nur bei Abholung",
+      until: "Gültig bis {date}",
+      extrasNote: "Extras werden zusätzlich berechnet.",
     },
   },
   /*
@@ -538,6 +555,9 @@ export const deTranslations: Translations = {
     couponBelowMinimum: "Dieser Code gilt ab einem Bestellwert von {amount}.",
     couponGone:
       "Dieser Code wurde soeben zum letzten Mal eingelöst. Bitte entfernen Sie ihn und bestellen Sie erneut.",
+    couponNoItems: "Dieser Code gilt für Artikel, die nicht in Ihrem Warenkorb sind.",
+    campaignGone:
+      "Eine Aktion in Ihrem Warenkorb ist soeben ausgelaufen. Der Betrag wurde aktualisiert — bitte prüfen und erneut bestätigen.",
 
     /* --- Übersicht --- */
     summaryDiscount: "Rabatt",
