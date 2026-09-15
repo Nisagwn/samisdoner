@@ -4,12 +4,15 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
+  MAX_SPICY_LEVEL,
   VAT_RATES,
   formatPrice,
   type Category,
+  type DietTag,
   type Product,
   type Variant,
 } from "@/lib/admin/types";
+import { formatCents } from "@/lib/money";
 import { useScrollLock } from "@/lib/useScrollLock";
 import {
   Badge,
@@ -40,9 +43,33 @@ type Draft = {
   sortOrder: string;
   variants: { size: string; price: string }[];
 
+  /* --- ürün seçenekleri --- */
+  optionGroups: DraftGroup[];
+
+  /* --- menü rozetleri --- */
+  isPopular: boolean;
+  isNew: boolean;
+  diet: DietTag;
+  spicyLevel: number;
+
   /* --- yasal bilgi (UStG / BGB) --- */
   vatRate: number;
   isPerishable: boolean;
+};
+
+/**
+ * Formdaki seçenek grubu.
+ *
+ * Sayılar da metin tutulur: yarım yazılmış bir "1" (alan boşaltılıp yeniden
+ * yazılırken) sayıya çevrilirse 0'a düşer ve kullanıcının parmağının altında
+ * kural değişir. Çeviri `toPayload`'da, tek yerde.
+ */
+type DraftGroup = {
+  name: string;
+  nameTr: string;
+  minSelect: string;
+  maxSelect: string;
+  choices: { name: string; nameTr: string; price: string; isDefault: boolean }[];
 };
 
 /** Müşteri tarafındaki `isVisible` kuralının arayüzdeki karşılığı. */
@@ -67,6 +94,11 @@ function emptyDraft(categoryId: string): Draft {
     featured: false,
     sortOrder: "",
     variants: [],
+    optionGroups: [],
+    isPopular: false,
+    isNew: false,
+    diet: "NONE",
+    spicyLevel: 0,
     /* Yeni ürün varsayılanı yemektir: %7 KDV, çabuk bozulan.
        İçecek eklerken ikisi de değiştirilmeli — bu yüzden formda ikisi de
        görünür alan, gizli varsayılan değil. */
@@ -96,6 +128,23 @@ function toDraft(product: Product): Draft {
       size: v.size,
       price: String(v.price).replace(".", ","),
     })),
+    optionGroups: product.optionGroups.map((g) => ({
+      name: g.name,
+      nameTr: g.nameTr,
+      minSelect: String(g.minSelect),
+      maxSelect: String(g.maxSelect),
+      choices: g.choices.map((c) => ({
+        name: c.name,
+        nameTr: c.nameTr,
+        // Ek ücret modelde cent; formda Euro yazılır.
+        price: c.priceCents === 0 ? "" : String(c.priceCents / 100).replace(".", ","),
+        isDefault: c.isDefault,
+      })),
+    })),
+    isPopular: product.isPopular,
+    isNew: product.isNew,
+    diet: product.diet,
+    spicyLevel: product.spicyLevel,
     vatRate: product.vatRate,
     isPerishable: product.isPerishable,
   };
@@ -124,6 +173,29 @@ function toPayload(draft: Draft) {
     // Boş bırakılırsa mevcut sıra korunur (yeni üründe listenin sonuna eklenir).
     ...(draft.sortOrder.trim() === "" ? {} : { sortOrder: Number(draft.sortOrder.trim()) }),
     variants,
+    // Adı boş bırakılmış grup/seçenek satırları düşer: kullanıcı bir satır
+    // ekleyip vazgeçtiyse kaydı engellemek yerine yok saymak doğru.
+    optionGroups: draft.optionGroups
+      .filter((g) => g.name.trim() !== "")
+      .map((g) => ({
+        name: g.name.trim(),
+        nameTr: g.nameTr.trim(),
+        minSelect: Number(g.minSelect) || 0,
+        maxSelect: Math.max(1, Number(g.maxSelect) || 1),
+        choices: g.choices
+          .filter((c) => c.name.trim() !== "")
+          .map((c) => ({
+            name: c.name.trim(),
+            nameTr: c.nameTr.trim(),
+            price: c.price.trim() === "" ? 0 : Number(c.price.replace(",", ".")),
+            isDefault: c.isDefault,
+          })),
+      }))
+      .filter((g) => g.choices.length > 0),
+    isPopular: draft.isPopular,
+    isNew: draft.isNew,
+    diet: draft.diet,
+    spicyLevel: draft.spicyLevel,
     vatRate: draft.vatRate,
     isPerishable: draft.isPerishable,
   };
@@ -648,6 +720,67 @@ function ProductForm({
             </button>
           </div>
 
+          {/* ------------------------------------------ seçenek grupları */}
+          <OptionGroupEditor draft={draft} setDraft={setDraft} />
+
+          {/* ------------------------------------------------- rozetler */}
+          <div className="border-t border-line pt-6">
+            <h3 className="font-display text-sm font-bold text-bone">Menü rozetleri</h3>
+            <p className="mt-1.5 mb-4 max-w-[70ch] text-xs leading-relaxed text-smoke">
+              Rozetler menüde ürünün yanında küçük etiketler olarak çıkar ve
+              müşterinin uzun listede nereye bakacağını söyler. Hepsi sizin
+              beyanınızdır — sipariş sayısından hesaplanmaz.{" "}
+              <span className="text-amber">İndirim yüzdesi</span> rozeti ayrıca
+              işaretlenmez: indirimli fiyat girdiğinizde kendiliğinden çıkar.
+            </p>
+
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-3">
+                <Toggle
+                  checked={draft.isPopular}
+                  onChange={(v) => set("isPopular", v)}
+                  onLabel="SEVİLEN — ROZET VAR"
+                  offLabel="SEVİLEN DEĞİL"
+                />
+                <Toggle
+                  checked={draft.isNew}
+                  onChange={(v) => set("isNew", v)}
+                  onLabel="YENİ — ROZET VAR"
+                  offLabel="YENİ DEĞİL"
+                />
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-5">
+                <Field
+                  label="Beslenme rozeti"
+                  hint="Vegan işareti mutfağın taahhüdüdür; alerjen bildiriminin yerine geçmez."
+                >
+                  <Select
+                    value={draft.diet}
+                    onChange={(e) => set("diet", e.target.value as DietTag)}
+                  >
+                    <option value="NONE">Rozet yok</option>
+                    <option value="VEGETARIAN">Vejetaryen</option>
+                    <option value="VEGAN">Vegan</option>
+                  </Select>
+                </Field>
+
+                <Field label="Acılık" hint="0 = işaret yok. Menüde biber sayısı olarak çıkar.">
+                  <Select
+                    value={String(draft.spicyLevel)}
+                    onChange={(e) => set("spicyLevel", Number(e.target.value))}
+                  >
+                    {Array.from({ length: MAX_SPICY_LEVEL + 1 }, (_, level) => (
+                      <option key={level} value={level}>
+                        {level === 0 ? "İşaret yok" : `${"🌶".repeat(level)} (${level}/3)`}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-3">
             <Toggle
               checked={draft.active}
@@ -750,6 +883,299 @@ function ProductForm({
           </Button>
         </div>
       </form>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------- seçenek grubu editörü */
+
+/** Bir gruba basılan "hazır kalıp" düğmeleri; en sık kurulan iki yapı. */
+const GROUP_PRESETS: { label: string; group: DraftGroup }[] = [
+  {
+    label: "+ ZORUNLU TEK SEÇİM (ör. et türü)",
+    group: {
+      name: "",
+      nameTr: "",
+      minSelect: "1",
+      maxSelect: "1",
+      choices: [{ name: "", nameTr: "", price: "", isDefault: true }],
+    },
+  },
+  {
+    label: "+ ÇOKLU EKSTRA (ör. soslar)",
+    group: {
+      name: "",
+      nameTr: "",
+      minSelect: "0",
+      maxSelect: "3",
+      choices: [{ name: "", nameTr: "", price: "", isDefault: false }],
+    },
+  },
+];
+
+/**
+ * Ürün seçeneklerinin panel tarafı.
+ *
+ * Neden iki hazır kalıp: pratikte kurulan grupların neredeyse tamamı ya
+ * "zorunlu, tek seçim" (et türü, boy) ya da "isteğe bağlı, çoklu" (soslar,
+ * ekstralar). İşletmeciyi min/max kutularıyla baş başa bırakmak, "min 2 / max
+ * 1" gibi ürünü sipariş edilemez yapan kombinasyonlar üretiyordu. Kalıplar
+ * doğru değerlerle başlatır, kutular yine de düzenlenebilir kalır.
+ *
+ * Kaydetmenin **açık sepetleri etkilediği** burada yazıyor: seçenek kimlikleri
+ * yeniden üretildiği için müşterinin sepetindeki eski tarif düşer. Sessiz
+ * bırakılsaydı işletmeci akşam servisinin ortasında farkında olmadan sepetleri
+ * boşaltırdı.
+ */
+function OptionGroupEditor({
+  draft,
+  setDraft,
+}: {
+  draft: Draft;
+  setDraft: (next: Draft) => void;
+}) {
+  const setGroup = (index: number, patch: Partial<DraftGroup>) =>
+    setDraft({
+      ...draft,
+      optionGroups: draft.optionGroups.map((g, i) => (i === index ? { ...g, ...patch } : g)),
+    });
+
+  const setChoice = (
+    groupIndex: number,
+    choiceIndex: number,
+    patch: Partial<DraftGroup["choices"][number]>
+  ) =>
+    setGroup(groupIndex, {
+      choices: draft.optionGroups[groupIndex].choices.map((c, i) =>
+        i === choiceIndex ? { ...c, ...patch } : c
+      ),
+    });
+
+  return (
+    <div className="border-t border-line pt-6">
+      <h3 className="font-display text-sm font-bold text-bone">Ürün seçenekleri</h3>
+      <p className="mt-1.5 mb-4 max-w-[70ch] text-xs leading-relaxed text-smoke">
+        Müşteri ürünü sepete eklerken sorulacak seçimler: et türü, soslar,
+        ekstra malzeme. <span className="text-amber">En az seçim</span> 0&apos;dan
+        büyükse grup zorunlu olur ve müşteri seçim yapmadan sepete ekleyemez —
+        ürün de menüde doğrudan değil, seçim penceresiyle eklenir.
+      </p>
+      <p className="mb-5 max-w-[70ch] border border-line bg-void px-4 py-3 text-xs leading-relaxed text-smoke/70">
+        <span className="text-amber">Dikkat:</span> kaydettiğinizde seçenek
+        kimlikleri yenilenir. O sırada müşterilerin sepetinde duran, bu ürüne ait
+        satırlar &quot;artık mevcut değil&quot; olarak görünür ve yeniden
+        seçilmeleri gerekir. Fiyat ya da seçenek adı değiştirirken bu beklenen
+        davranıştır: eski tarifin yeni fiyatla sessizce eşleşmesi, müşteriden
+        gördüğünden farklı bir tutar tahsil etmek olurdu.
+      </p>
+
+      <div className="space-y-5">
+        {draft.optionGroups.map((group, groupIndex) => {
+          const defaults = group.choices.filter((c) => c.isDefault).length;
+          const min = Number(group.minSelect) || 0;
+          const max = Math.max(1, Number(group.maxSelect) || 1);
+          const broken = min > max;
+          const tooManyDefaults = defaults > max;
+          const paidDefault = group.choices.some(
+            (c) => c.isDefault && c.price.trim() !== "" && Number(c.price.replace(",", ".")) > 0
+          );
+
+          return (
+            <div key={groupIndex} className="border border-line bg-void p-4">
+              <div className="flex flex-wrap items-start gap-3">
+                <div className="min-w-[180px] flex-1">
+                  <Field label={`Grup ${groupIndex + 1} — başlık (DE)`}>
+                    <TextInput
+                      maxLength={80}
+                      value={group.name}
+                      onChange={(e) => setGroup(groupIndex, { name: e.target.value })}
+                      placeholder="Fleisch"
+                    />
+                  </Field>
+                </div>
+                <div className="min-w-[180px] flex-1">
+                  <Field label="Başlık (TR)">
+                    <TextInput
+                      maxLength={80}
+                      value={group.nameTr}
+                      onChange={(e) => setGroup(groupIndex, { nameTr: e.target.value })}
+                      placeholder="Et türü"
+                    />
+                  </Field>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      optionGroups: draft.optionGroups.filter((_, i) => i !== groupIndex),
+                    })
+                  }
+                  aria-label={`Grup ${groupIndex + 1} sil`}
+                  className="focus-ring tag mt-8 border border-line px-3 py-2.5 text-smoke transition-colors hover:border-flame hover:text-flame"
+                >
+                  GRUBU SİL
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <Field label="En az seçim" hint="0 = isteğe bağlı grup.">
+                  <TextInput
+                    inputMode="numeric"
+                    value={group.minSelect}
+                    onChange={(e) => setGroup(groupIndex, { minSelect: e.target.value })}
+                    className="sm:max-w-[120px]"
+                  />
+                </Field>
+                <Field label="En fazla seçim" hint="1 = tek seçim (radyo düğmesi).">
+                  <TextInput
+                    inputMode="numeric"
+                    value={group.maxSelect}
+                    onChange={(e) => setGroup(groupIndex, { maxSelect: e.target.value })}
+                    className="sm:max-w-[120px]"
+                  />
+                </Field>
+              </div>
+
+              {broken && (
+                <div className="mt-3">
+                  <Notice
+                    kind="error"
+                    message="En az seçim, en fazla seçimden büyük olamaz — bu ürün hiç sipariş edilemez hâle gelir."
+                  />
+                </div>
+              )}
+              {!broken && tooManyDefaults && (
+                <div className="mt-3">
+                  <Notice
+                    kind="error"
+                    message={`En fazla ${max} seçenek varsayılan olarak işaretlenebilir.`}
+                  />
+                </div>
+              )}
+              {/* Uyarı, hata değil: ücretli varsayılan bilinçli bir tercih
+                  olabilir (ör. "normal boy" zaten ücretli). `Notice` yalnızca
+                  hata/başarı tonlarını tanıdığı için bu satır kendi tonunu
+                  taşıyor. */}
+              {paidDefault && (
+                <p
+                  role="status"
+                  className="mt-3 border border-amber/50 bg-amber/10 px-4 py-3 text-sm text-amber"
+                >
+                  Ücretli bir seçenek varsayılan işaretli: müşteri pencereyi açar
+                  açmaz o ücreti görür. Kasıtlı değilse işareti kaldırın.
+                </p>
+              )}
+
+              <div className="mt-4 space-y-2">
+                <span className="tag block text-smoke">Seçenekler</span>
+                {group.choices.map((choice, choiceIndex) => (
+                  <div key={choiceIndex} className="flex flex-wrap items-center gap-2">
+                    <TextInput
+                      value={choice.name}
+                      onChange={(e) => setChoice(groupIndex, choiceIndex, { name: e.target.value })}
+                      placeholder="Kalbfleisch"
+                      aria-label={`Seçenek ${choiceIndex + 1} adı (DE)`}
+                      className="min-w-[140px] flex-1"
+                    />
+                    <TextInput
+                      value={choice.nameTr}
+                      onChange={(e) =>
+                        setChoice(groupIndex, choiceIndex, { nameTr: e.target.value })
+                      }
+                      placeholder="Dana eti"
+                      aria-label={`Seçenek ${choiceIndex + 1} adı (TR)`}
+                      className="min-w-[120px] flex-1"
+                    />
+                    <TextInput
+                      inputMode="decimal"
+                      value={choice.price}
+                      onChange={(e) =>
+                        setChoice(groupIndex, choiceIndex, { price: e.target.value })
+                      }
+                      placeholder="0,00"
+                      aria-label={`Seçenek ${choiceIndex + 1} ek ücreti (€)`}
+                      className="w-24"
+                    />
+                    <label className="tag flex items-center gap-2 text-smoke">
+                      <input
+                        type="checkbox"
+                        checked={choice.isDefault}
+                        onChange={(e) =>
+                          setChoice(groupIndex, choiceIndex, { isDefault: e.target.checked })
+                        }
+                        className="focus-ring h-4 w-4 accent-[#FFC247]"
+                      />
+                      VARSAYILAN
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setGroup(groupIndex, {
+                          choices: group.choices.filter((_, i) => i !== choiceIndex),
+                        })
+                      }
+                      aria-label={`Seçenek ${choiceIndex + 1} sil`}
+                      className="focus-ring tag border border-line px-3 py-2.5 text-smoke transition-colors hover:border-flame hover:text-flame"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setGroup(groupIndex, {
+                      choices: [
+                        ...group.choices,
+                        { name: "", nameTr: "", price: "", isDefault: false },
+                      ],
+                    })
+                  }
+                  className="focus-ring tag border border-line px-3 py-2 text-smoke transition-colors hover:border-amber hover:text-amber"
+                >
+                  + SEÇENEK EKLE
+                </button>
+              </div>
+
+              {/* Ek ücretlerin özeti: işletmeci "en pahalı hâli ne tutar"
+                  sorusunu formdan çıkmadan görebilsin. */}
+              <p className="mt-3 font-mono text-[11px] text-smoke/60 tabular-nums">
+                En yüksek ek ücret:{" "}
+                {formatCents(
+                  group.choices
+                    .map((c) => Math.round((Number(c.price.replace(",", ".")) || 0) * 100))
+                    .sort((a, b) => b - a)
+                    .slice(0, max)
+                    .reduce((sum, cents) => sum + cents, 0)
+                )}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {GROUP_PRESETS.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            onClick={() =>
+              setDraft({
+                ...draft,
+                optionGroups: [
+                  ...draft.optionGroups,
+                  { ...preset.group, choices: preset.group.choices.map((c) => ({ ...c })) },
+                ],
+              })
+            }
+            className="focus-ring tag border border-line px-3 py-2 text-smoke transition-colors hover:border-amber hover:text-amber"
+          >
+            {preset.label}
+          </button>
+        ))}
       </div>
     </div>
   );
