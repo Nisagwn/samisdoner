@@ -22,7 +22,28 @@ export type CheckoutRequest = {
   /** Teslimat + servis ücreti; tek bir satır olarak gösterilir. */
   feeCents: number;
   feeLabel: string;
-  /** Sunucuda hesaplanmış toplam. Doğrulama için taşınır. */
+  /**
+   * Bahşiş (cent). Sağlayıcı sayfasında **ayrı bir satır** olarak görünür:
+   * müşteri ödeme ekranında bıraktığı bahşişi görebilmeli, toplamın içinde
+   * kaybolmamalı.
+   */
+  tipCents: number;
+  tipLabel: string;
+  /**
+   * Kupon indirimi (pozitif cent). Satır olarak eklenemez — hiçbir sağlayıcı
+   * negatif tutarlı satır kabul etmez — bu yüzden sürücü bunu kendi indirim
+   * mekanizmasıyla uygular.
+   */
+  discountCents: number;
+  discountLabel: string;
+  /**
+   * Sunucuda hesaplanmış toplam.
+   *
+   * Sürücü bunu **doğrulamak zorundadır**: kendi kurduğu satırların toplamı
+   * buna eşit değilse oturum hiç açılmamalıdır. Aksi hâlde ekranda yazan
+   * tutardan farklı bir tutar tahsil edilir ve fark ancak mutabakatta
+   * görülür.
+   */
   totalCents: number;
   email?: string;
   lang: "tr" | "de";

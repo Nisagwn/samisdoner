@@ -5,10 +5,12 @@ import { prisma } from "@/lib/db";
 import { getCurrentCustomer } from "@/lib/account/guard";
 import { paymentProvider } from "@/lib/payments/stripe";
 import { checkThrottle, recordFailure, throttleKeys } from "@/lib/security/throttle";
+import { getOrderSettings } from "./availability";
 import { buildCheckoutQuote } from "./checkout";
-import { createOrder } from "./repository";
+import { CouponUnavailableError, createOrder } from "./repository";
 import { createOrderSchema } from "./schema";
 import type { CreateOrderResult } from "./result";
+import { settleOnSiteOrder } from "./settle";
 import { createOrderToken } from "./token";
 import { SITE_URL } from "@/lib/site";
 
@@ -85,7 +87,47 @@ export async function createOrderAction(input: unknown): Promise<CreateOrderResu
     };
   }
 
-  const { lines, fulfillment, lang, customer, address, requestedAt } = parsed.data;
+  const { lines, fulfillment, lang, customer, address, paymentMethod, couponCode, tipCents } =
+    parsed.data;
+
+  /*
+   * İleri saatli sipariş (Vorbestellung).
+   *
+   * Saatin gerçekten seçilebilir olduğu `checkOrderability` içinde, çalışma
+   * saatleri ve tatil günleri okunarak denetlenir. Burada yalnızca ayrıştırma
+   * yapılır; ayrıştırılamayan bir değer "en kısa sürede"ye düşmez, reddedilir —
+   * akşam 20:00'ye sipariş verdiğini sanan müşteriye 20 dakika sonra yemek
+   * göndermek, sipariş almamaktan kötüdür.
+   */
+  let requestedAt: Date | null = null;
+  if (parsed.data.requestedAt) {
+    const parsedDate = new Date(parsed.data.requestedAt);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return {
+        ok: false,
+        error: { code: "invalid_input", field: "requestedAt", message: "Ungültige Uhrzeit." },
+      };
+    }
+    requestedAt = parsedDate;
+  }
+
+  /*
+   * Kapıda ödeme açık mı.
+   *
+   * `cashEnabled` anahtarı **kapıda ödemenin tamamını** yönetir: nakit ve
+   * kapıda kart aynı kapıdan geçer, çünkü ikisinin de işletme açısından anlamı
+   * aynı — para teslim anında, personelin elinden alınıyor. Ayarlara ikinci
+   * bir anahtar eklemek, panelde birbirinden ayırt edilemeyen iki kutu
+   * demekti.
+   *
+   * Karar sunucuda: arayüz seçeneği gizlese bile istek gövdesi kurcalanabilir.
+   */
+  if (paymentMethod !== "ONLINE") {
+    const settings = await getOrderSettings();
+    if (!settings.cashEnabled) {
+      return { ok: false, error: { code: "payment_method_unavailable", paymentMethod } };
+    }
+  }
 
   /*
    * Oturum açıksa sipariş hesaba bağlanır. Bağ **oturumdan** kurulur, istek
@@ -110,6 +152,9 @@ export async function createOrderAction(input: unknown): Promise<CreateOrderResu
     lang,
     fulfillment,
     zip: address?.zip,
+    couponCode,
+    tipCents,
+    requestedAt,
   });
 
   const unavailable = quote.lines.filter((line) => line.unavailable);
@@ -127,16 +172,39 @@ export async function createOrderAction(input: unknown): Promise<CreateOrderResu
     return { ok: false, error: quote.rejection };
   }
 
+  /*
+   * Kupon kodu girilmiş ama kabul edilmemişse sipariş **durur**.
+   *
+   * Teklif ucunda (sepette) reddedilen kupon akışı durdurmuyor: müşteri kodu
+   * düzeltsin diye indirim 0 gösteriliyor. Ama sipariş anında sessizce devam
+   * etmek, indirimli olduğunu sanan müşteriden tam tutarı tahsil etmek olurdu.
+   */
+  if (quote.couponRejection) {
+    return { ok: false, error: quote.couponRejection };
+  }
+
   const deliveryFeeCents = quote.deliveryFeeCents;
 
-  const expiresAt = new Date(Date.now() + PAYMENT_WINDOW_MINUTES * 60_000);
+  /*
+   * Ödeme penceresi yalnızca online ödemede vardır: kapıda ödenen siparişte
+   * beklenecek bir tahsilat yok, dolayısıyla süresi dolacak bir şey de yok.
+   */
+  const online = paymentMethod === "ONLINE";
+  const paymentWindowEnd = new Date(Date.now() + PAYMENT_WINDOW_MINUTES * 60_000);
+  const expiresAt = online ? paymentWindowEnd : null;
 
-  const order = await createOrder({
+  let order: Awaited<ReturnType<typeof createOrder>>;
+  try {
+    order = await createOrder({
     customerId: account?.id ?? null,
     lines: quote.lines,
     subtotalCents: quote.subtotalCents,
     serviceFeeCents: quote.serviceFeeCents,
     deliveryFeeCents,
+    discountCents: quote.discountCents,
+    couponCode: quote.couponCode,
+    tipCents: quote.tipCents,
+    paymentMethod,
     fulfillment,
     lang,
     customerName: customer.name,
@@ -151,14 +219,54 @@ export async function createOrderAction(input: unknown): Promise<CreateOrderResu
     zip: address?.zip ?? "",
     city: address?.city ?? "",
     note: customer.note ?? "",
-    requestedAt: requestedAt ? new Date(requestedAt) : null,
-    // Tahmini süre siparişe DONDURULUR: bölge ayarı yarın değişse bile bu
-    // siparişe verilen söz değişmez. Saatin kendisi ödeme onayında türetilir.
-    etaMinutes: quote.etaMinutes,
-    expiresAt,
-  });
+    requestedAt,
+      // Tahmini süre siparişe DONDURULUR: bölge ayarı yarın değişse bile bu
+      // siparişe verilen söz değişmez. Saatin kendisi ödeme onayında türetilir.
+      etaMinutes: quote.etaMinutes,
+      expiresAt,
+    });
+  } catch (error) {
+    /*
+     * Kupon, teklif ile sipariş yazımı arasında elden kaçtı. Sipariş hiç
+     * oluşmadı (kullanım kaydı ile sipariş aynı işlemde) — müşteri kodu
+     * silip tekrar deneyebilir.
+     */
+    if (error instanceof CouponUnavailableError) {
+      return { ok: false, error: { code: "coupon_gone" } };
+    }
+    throw error;
+  }
 
   const token = await createOrderToken(order.orderNo);
+
+  /*
+   * Kapıda ödeme: Stripe'a hiç uğranmaz.
+   *
+   * Sipariş doğrudan mutfağa düşer ve müşteri takip sayfasına yönlendirilir.
+   * Yönlendirme yine bir adrestir (`checkoutUrl`) — çağıran tarafın iki farklı
+   * dönüş biçimini ayırt etmesi gerekmesin; ödeme yöntemini seçen zaten o.
+   */
+  if (!online) {
+    try {
+      await settleOnSiteOrder({ orderNo: order.orderNo, method: paymentMethod });
+    } catch (error) {
+      /*
+       * Sipariş yazıldı ama mutfağa düşürülemedi. Kayıt PENDING_PAYMENT'ta
+       * kalır ve `expiresAt` boş olduğu için bakım görevi onu kapatmaz —
+       * panelde görünür ve elle ilerletilebilir. Müşteriye teknik ayrıntı
+       * verilmez.
+       */
+      console.error(`[order] ${order.orderNo} — kapıda ödeme siparişi açılamadı`, error);
+      return { ok: false, error: { code: "payment_unavailable" } };
+    }
+
+    return {
+      ok: true,
+      orderNo: order.orderNo,
+      checkoutUrl: `${SITE_URL}/bestellung/${encodeURIComponent(token)}`,
+    };
+  }
+
   const feeCents = quote.serviceFeeCents + deliveryFeeCents;
 
   try {
@@ -172,6 +280,13 @@ export async function createOrderAction(input: unknown): Promise<CreateOrderResu
       })),
       feeCents,
       feeLabel: lang === "de" ? "Liefer- und Servicegebühr" : "Teslimat ve servis ücreti",
+      tipCents: quote.tipCents,
+      tipLabel: lang === "de" ? "Trinkgeld" : "Bahşiş",
+      discountCents: quote.discountCents,
+      discountLabel:
+        lang === "de"
+          ? `Gutschein ${quote.couponCode}`
+          : `İndirim kuponu ${quote.couponCode}`,
       totalCents: order.totalCents,
       email: customer.email || account?.email || undefined,
       lang,
@@ -183,7 +298,8 @@ export async function createOrderAction(input: unknown): Promise<CreateOrderResu
        * kalır ve süresi dolunca kendiliğinden kapanır.
        */
       cancelUrl: `${SITE_URL}/checkout?abgebrochen=1`,
-      expiresAt,
+      // Bu dala yalnızca online ödemede gelinir; pencere her zaman doludur.
+      expiresAt: paymentWindowEnd,
     });
 
     // Ödeme satırı beklemede açılır: müşteri Stripe'ta kaybolursa bile hangi
