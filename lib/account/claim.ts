@@ -94,3 +94,57 @@ export async function claimGuestOrder(
   await prisma.order.update({ where: { id: order.id }, data: { customerId } });
   return { ok: true, orderNo: order.orderNo };
 }
+
+
+/**
+ * Kayıt/giriş sonrası kendiliğinden bağlama.
+ *
+ * Elle "hesabıma ekle" adımı duruyor ve duracak — sipariş numarasını elinde
+ * tutan herkes onu kullanabilmeli. Ama o adımı bulan müşteri az; çoğu kişi
+ * hesabını açar, geçmişini boş görür ve bir daha bakmaz.
+ *
+ * Burada kullanıcıdan hiçbir şey istenmediği için ölçüt elle bağlamadan
+ * **daha dar**: e-posta ile telefon aynı anda tutmalı. Tek başına e-posta
+ * yeterli olsaydı, ortak bir aile adresiyle verilmiş siparişler yanlış hesaba
+ * düşerdi; tek başına telefon yeterli olsaydı, numarasını değiştiren birinin
+ * eski numarasını alan kişi onun geçmişini devralırdı.
+ *
+ * Telefon karşılaştırması veritabanında yapılamıyor (normalize edilmesi
+ * gerekiyor), bu yüzden aday siparişler e-postayla çekilip bellekte eleniyor.
+ * Aday sayısı doğası gereği küçük: tek bir e-posta adresine ait misafir
+ * siparişleri.
+ */
+export async function autoClaimGuestOrders(
+  customerId: string,
+  email: string,
+  phone: string
+): Promise<number> {
+  const wanted = normalizePhone(phone);
+  if (!email || wanted.length < 6) return 0;
+
+  const candidates = await prisma.order.findMany({
+    where: {
+      customerId: null,
+      email: { equals: email.toLowerCase(), mode: "insensitive" },
+    },
+    select: { id: true, phone: true },
+    // Üst sınır, bir hata durumunda sınırsız yazma yapılmasını engeller.
+    take: 50,
+  });
+
+  const matching = candidates
+    .filter((order) => normalizePhone(order.phone) === wanted)
+    .map((order) => order.id);
+  if (matching.length === 0) return 0;
+
+  /*
+   * `customerId: null` koşulu güncellemenin kendi `where`'inde duruyor: aday
+   * listesi çekildikten sonra o siparişlerden biri başka bir hesaba bağlanmış
+   * olabilir ve bağlı bir sipariş hiçbir koşulda el değiştirmemeli.
+   */
+  const result = await prisma.order.updateMany({
+    where: { id: { in: matching }, customerId: null },
+    data: { customerId },
+  });
+  return result.count;
+}
