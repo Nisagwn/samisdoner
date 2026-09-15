@@ -2,10 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useCallback, useState } from "react";
 import { Button, buttonClass } from "@/components/ui";
 import { formatPrice, type Product } from "@/lib/admin/types";
+import { isRequiredGroup } from "@/lib/menu/options";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useCart } from "@/lib/cart";
+import ProductDialog, { type ProductDraft } from "@/components/ProductDialog";
+import type { MenuItem } from "@/data/speisekarte";
+import type { MenuItemsResponse } from "@/app/api/menu/items/route";
 
 /**
  * "Öne çıkan lezzetler" vitrini.
@@ -36,6 +41,31 @@ export default function Products({
   const { t, lang } = useLanguage();
   const { add, openCart } = useCart();
   const Heading = lead ? "h1" : "h2";
+
+  /**
+   * Vitrinden açılan ürün penceresi.
+   *
+   * Zorunlu seçimi olan ürün (et türü gibi) vitrinden **doğrudan eklenemez**:
+   * seçim yapılmadan oluşan satır sunucuda fiyatlanamaz ve sepette "artık
+   * mevcut değil" görünürdü. Bu yüzden vitrin de menüyle aynı pencereyi açar.
+   *
+   * Ürünün seçenek tarifi burada eksik (`Product` alan modelinde gruplar var
+   * ama `MenuItem` biçimi yok), o yüzden pencere açılırken menü ucundan
+   * çekilir — vitrinde üç ürün olduğu için bu istek yalnızca tıklamada olur,
+   * sayfa yükünde değil.
+   */
+  const [opened, setOpened] = useState<MenuItem | null>(null);
+
+  const openDialog = useCallback(async (productId: string) => {
+    try {
+      const response = await fetch(`/api/menu/items?ids=${encodeURIComponent(productId)}`);
+      if (!response.ok) return;
+      const data = (await response.json()) as MenuItemsResponse;
+      if (data.items[0]) setOpened(data.items[0]);
+    } catch {
+      // Ağ hatası: pencere açılmaz, vitrin olduğu gibi kalır.
+    }
+  }, []);
 
   return (
     <section id="produkte" className="relative overflow-hidden bg-void py-24 md:py-32 border-t border-line">
@@ -105,6 +135,10 @@ export default function Products({
                   <Button
                     variant="outline"
                     onClick={() => {
+                      if (product.optionGroups.some(isRequiredGroup)) {
+                        void openDialog(product.id);
+                        return;
+                      }
                       add({
                         kind: "product",
                         productId: product.id,
@@ -114,7 +148,9 @@ export default function Products({
                     }}
                     className="w-full"
                   >
-                    {t.menuGrid.addToCart}
+                    {product.optionGroups.some(isRequiredGroup)
+                      ? t.ordering.item.choose
+                      : t.menuGrid.addToCart}
                   </Button>
                 </div>
               );
@@ -130,6 +166,28 @@ export default function Products({
           </div>
         )}
       </div>
+
+      {opened?.productId && (
+        <ProductDialog
+          item={opened}
+          mode="add"
+          onClose={() => setOpened(null)}
+          onSubmit={(draft: ProductDraft) => {
+            add({
+              kind: "product",
+              productId: opened.productId as string,
+              ...(draft.variantSize ? { variantSize: draft.variantSize } : {}),
+              ...(draft.options.length > 0 ? { options: draft.options } : {}),
+              ...(draft.note ? { note: draft.note } : {}),
+              qty: draft.qty,
+            });
+            setOpened(null);
+            // Vitrinden eklemede çekmece açılır: menüdeki gibi "eklemeye devam
+            // et" bağlamı yok, buradan sonraki adım sepete bakmak.
+            openCart();
+          }}
+        />
+      )}
     </section>
   );
 }
