@@ -382,4 +382,92 @@ export const trTranslations = {
     homeBtn: "ANA SAYFA",
     callHint: "Acelen varsa telefonla sipariş verebilirsin:",
   },
+
+  /**
+   * ══════════════════════════════════════════ sipariş hunisi (keşif → sepet)
+   *
+   * Ürün penceresi, menü rozetleri, kapalı bandı ve sepetin eşik/öneri
+   * kısımları. Kendi bloğunda duruyor: bu alanda çalışan metinler bir arada
+   * kalsın, dosyanın ortasındaki mevcut anahtarlarla karışmasın.
+   */
+  ordering: {
+    badges: {
+      popular: "Sevilen",
+      new: "Yeni",
+      vegetarian: "Vejetaryen",
+      vegan: "Vegan",
+      spicy: "Acı",
+      discount: "−%{percent}",
+    },
+
+    item: {
+      /** Zorunlu grup başlığının yanındaki işaret. */
+      required: "Zorunlu seçim",
+      optional: "İsteğe bağlı",
+      /** Seçim sayısı kuralı; grup başlığının altında küçük yazı. */
+      chooseExactly: "{min} seçim yap",
+      chooseUpTo: "en fazla {max} seçim",
+      chooseMinMax: "{min}–{max} arası seçim",
+      included: "dahil",
+      /** Kaç seçim yapıldığını söyleyen sayaç. */
+      selectedCount: "{count}/{max} seçildi",
+      missingRequired: "Önce „{group}“ seçmelisin.",
+      maxReached: "Bu grupta en fazla {max} seçim yapabilirsin.",
+      noteLabel: "Mutfağa not (isteğe bağlı)",
+      notePlaceholder: "Soğansız, acılı olsun…",
+      noteHint: "Özel istekler ücretsizdir ama her zaman mümkün olmayabilir.",
+      qtyLabel: "Adet",
+      /** Sepete ekleme düğmesi; canlı toplamı taşır. */
+      addForTotal: "SEPETE EKLE · {amount}",
+      saveChanges: "DEĞİŞİKLİKLERİ KAYDET · {amount}",
+      /** Menü satırındaki, pencereyi açan ikincil düğme. */
+      customize: "Özelleştir",
+      /** Zorunlu seçimi olan üründe ana düğme sepete eklemez, pencereyi açar. */
+      choose: "SEÇ VE EKLE →",
+      close: "Kapat",
+      unitPrice: "Birim fiyat",
+      /** Pencere içindeki tutarın neyi kapsadığı. */
+      priceNote: "Tüm fiyatlara KDV dahildir. Kesin tutar sepette hesaplanır.",
+    },
+
+    status: {
+      closedTitle: "Şu an kapalıyız",
+      closedText: "Sepetini şimdi doldurabilirsin; açıldığımızda siparişini gönderebilirsin.",
+      pausedTitle: "Sipariş alımı duraklatıldı",
+      pausedText: "Kısa bir ara verdik. Lütfen biraz sonra tekrar dene.",
+      opensToday: "Bugün {time} itibarıyla açılıyoruz.",
+      opensTomorrow: "Yarın {time} itibarıyla açılıyoruz.",
+      opensWeekday: "{weekday} günü {time} itibarıyla açılıyoruz.",
+      /** Çalışma saati hiç girilmemişse gösterilir. */
+      opensUnknown: "Açılış saatleri için lütfen bizi arayın.",
+      todayHours: "Bugün: {hours}",
+      closedToday: "Bugün kapalıyız.",
+      openNow: "Şu an açığız",
+      /** 0 = Pazar … 6 = Cumartesi (JS getDay ile aynı sıra). */
+      weekdays: ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"],
+    },
+
+    cart: {
+      editLine: "Değiştir",
+      removed: "„{name}“ sepetten çıkarıldı.",
+      undo: "Geri al",
+      minOrderTitle: "Minimum sepet tutarı",
+      minOrderRemaining: "Minimum tutara {amount} kaldı",
+      minOrderReached: "Minimum sepet tutarına ulaştın",
+      /** Posta kodu henüz seçilmediğinde: bölgeye göre değişebileceğini söyler. */
+      minOrderGeneric: "Minimum sepet tutarı {amount} üzerinden başlar; bölgene göre değişir.",
+      freeDeliveryTitle: "Ücretsiz teslimat",
+      freeDeliveryRemaining: "Ücretsiz teslimata {amount} kaldı",
+      freeDeliveryReached: "Teslimat ücretsiz",
+      freeDeliveryGeneric: "{amount} üzeri siparişlerde teslimat ücretsiz.",
+      suggestionsTitle: "Yanına yakışır",
+      suggestionsAdd: "Ekle",
+      /** Mobil alt çubuk. */
+      barLabel: "Sepeti aç",
+      barItems: "{count} ürün",
+      /** Teslim biçimi anahtarı sepette de var: ücretler buna göre değişiyor. */
+      fulfillmentHint: "Teslimat ücreti ve minimum tutar teslim biçimine göre değişir.",
+      zipHint: "Posta kodunu ödeme adımında seçeceksin.",
+    },
+  },
 };

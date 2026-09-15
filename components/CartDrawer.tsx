@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { lineKey, useCart } from "@/lib/cart";
+import { lineKey, useCart, type CartLine } from "@/lib/cart";
 import { formatCents } from "@/lib/money";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { Button, QtyStepper } from "@/components/ui";
 import { useScrollLock } from "@/lib/useScrollLock";
+import { thresholdProgress } from "@/lib/menu/progress";
+import ProductDialog, { type ProductDraft } from "@/components/ProductDialog";
 import type { MenuStatus } from "@/app/api/menu/status/route";
+import type { MenuItem } from "@/data/speisekarte";
+import type { MenuItemsResponse } from "@/app/api/menu/items/route";
 
 /**
  * Sepet çekmecesi — yalnızca sepet.
@@ -29,11 +33,32 @@ import type { MenuStatus } from "@/app/api/menu/status/route";
  */
 export default function CartDrawer() {
   const { t } = useLanguage();
-  const { lines, count, quote, pricing, isOpen, setQty, remove, closeCart } = useCart();
+  const {
+    lines,
+    count,
+    quote,
+    pricing,
+    isOpen,
+    fulfillment,
+    setFulfillment,
+    setQty,
+    remove,
+    replace,
+    add,
+    lastRemoved,
+    undoRemove,
+    dismissUndo,
+    closeCart,
+  } = useCart();
   const router = useRouter();
 
   const [status, setStatus] = useState<MenuStatus | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+
+  /** Düzenlenmekte olan satır ve onun ürün tarifi; ikisi birlikte gelir. */
+  const [editing, setEditing] = useState<{ line: CartLine; item: MenuItem } | null>(null);
+  /** Çapraz satış önerileri; sepet değiştikçe tazelenir. */
+  const [suggestions, setSuggestions] = useState<MenuItem[]>([]);
 
   /** Satır anahtarına göre sunucudan gelen fiyatlar. */
   const priced = useMemo(
@@ -43,6 +68,20 @@ export default function CartDrawer() {
 
   const hasUnavailable = quote?.hasUnavailable ?? false;
   const totalsReady = quote !== null && pricing !== "error";
+
+  /*
+   * Satır adları, satır sepetten çıktıktan sonra da lazım.
+   *
+   * "Geri al" şeridi silinen satırı adıyla anmalı ("„Döner“ entfernt"), ama o
+   * satır artık ne sepette ne de teklifte. Ad tek kaynaktan — sunucunun
+   * fiyatladığı satırdan — geliyor, dolayısıyla burada biriktiriliyor;
+   * istemcide ikinci bir ad üretmek, dil değiştiğinde ikisinin ayrışması
+   * demekti.
+   */
+  const labels = useRef(new Map<string, string>());
+  useEffect(() => {
+    for (const line of quote?.lines ?? []) labels.current.set(line.key, line.label);
+  }, [quote]);
 
   // Çekmece açıkken arkadaki sayfa kaymaz; bkz. lib/useScrollLock.ts.
   useScrollLock(isOpen);
@@ -85,6 +124,63 @@ export default function CartDrawer() {
     if (status && !status.open) return t.cart.statusClosed;
     return null;
   })();
+
+  /*
+   * Çapraz satış.
+   *
+   * Yalnızca sepette bir şey varken ve çekmece açıkken çekilir: boş sepete
+   * "yanına ne alırsın" sormak anlamsız, kapalı çekmeceye öneri yüklemek ise
+   * hiç görülmeyecek bir istek. Sepetteki ürünler dışlanır — zaten aldığı şeyi
+   * önermek, önerinin tamamına olan güveni bitirir.
+   */
+  const productIds = useMemo(() => lines.map((l) => l.productId).join(","), [lines]);
+
+  useEffect(() => {
+    if (!isOpen || lines.length === 0) {
+      setSuggestions([]);
+      return;
+    }
+    const controller = new AbortController();
+
+    fetch(`/api/menu/items?suggest=3&exclude=${encodeURIComponent(productIds)}`, {
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("items"))))
+      .then((data: MenuItemsResponse) => setSuggestions(data.items))
+      .catch(() => {
+        // Öneri bir süs: yüklenemezse şerit hiç çizilmez, akış etkilenmez.
+      });
+
+    return () => controller.abort();
+  }, [isOpen, lines.length, productIds]);
+
+  /**
+   * "Geri al" teklifi kendiliğinden kapanır.
+   *
+   * Süresiz duran bir geri alma şeridi, bir sonraki oturumda hâlâ orada olur ve
+   * müşteri neyi geri alacağını unutmuş olur. Altı saniye, yanlış dokunuşu fark
+   * edip düzeltmeye yeter.
+   */
+  useEffect(() => {
+    if (!lastRemoved) return;
+    const timer = setTimeout(dismissUndo, 6000);
+    return () => clearTimeout(timer);
+  }, [lastRemoved, dismissUndo]);
+
+  /** Satırı düzenlemek için ürünün güncel tarifini çeker. */
+  const startEditing = useCallback(async (line: CartLine) => {
+    try {
+      const response = await fetch(`/api/menu/items?ids=${encodeURIComponent(line.productId)}`);
+      if (!response.ok) return;
+      const data = (await response.json()) as MenuItemsResponse;
+      const item = data.items[0];
+      // Ürün menüden kalkmışsa pencere açılmaz: satır zaten "nicht verfügbar"
+      // işaretli görünüyor ve tek yapılabilecek şey onu silmek.
+      if (item) setEditing({ line, item });
+    } catch {
+      // Ağ hatası: düzenleme açılmaz, sepet olduğu gibi kalır.
+    }
+  }, []);
 
   const goToCheckout = () => {
     closeCart();
@@ -193,22 +289,134 @@ export default function CartDrawer() {
                           increase: t.cart.increaseQty,
                         }}
                       />
-                      <button
-                        onClick={() => remove(key)}
-                        className="focus-ring tag min-h-[44px] px-2 text-smoke transition-colors hover:text-flame"
-                      >
-                        {t.cart.removeBtn}
-                      </button>
+                      <div className="flex items-center">
+                        {/* Satırı yeniden yapılandırmak: sos değiştirmek için
+                            silip menüye dönmek, seçenekli bir üründe dokuz
+                            dokunuş demekti. */}
+                        <button
+                          onClick={() => void startEditing(line)}
+                          className="focus-ring tag min-h-[44px] px-2 text-smoke transition-colors hover:text-amber"
+                        >
+                          {t.ordering.cart.editLine}
+                        </button>
+                        <button
+                          onClick={() => remove(key)}
+                          className="focus-ring tag min-h-[44px] px-2 text-smoke transition-colors hover:text-flame"
+                        >
+                          {t.cart.removeBtn}
+                        </button>
+                      </div>
                     </div>
                   </li>
                 );
               })}
             </ul>
           )}
+
+          {/* çapraz satış — "Dazu passt" */}
+          {lines.length > 0 && suggestions.length > 0 && (
+            <div className="mt-6 border-t border-line pt-5">
+              <p className="tag mb-3 text-smoke">{t.ordering.cart.suggestionsTitle}</p>
+              <ul className="space-y-2">
+                {suggestions.map((item) => (
+                  <li
+                    key={item.productId}
+                    className="flex items-center justify-between gap-3 border border-line bg-void/35 px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-bone">{item.name}</p>
+                      {item.price && (
+                        <p className="font-mono text-xs text-amber tabular-nums">{item.price}</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        add({
+                          kind: "product",
+                          productId: item.productId as string,
+                          ...(item.variants?.[0] ? { variantSize: item.variants[0].size } : {}),
+                        })
+                      }
+                      className="focus-ring tag min-h-[44px] shrink-0 border border-line px-3 text-smoke transition-colors hover:border-amber hover:text-amber"
+                    >
+                      {t.ordering.cart.suggestionsAdd}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
+
+        {/* Geri alma şeridi listenin üstünde değil altında: silinen satırın
+            bulunduğu yer değişmiş olabilir, ama alt şerit her zaman aynı
+            yerde. */}
+        {lastRemoved && (
+          <div
+            role="status"
+            className="flex shrink-0 items-center justify-between gap-3 border-t border-line bg-void/60 px-6 py-3"
+          >
+            <p className="min-w-0 truncate text-xs text-smoke">
+              {t.ordering.cart.removed.replace(
+                "{name}",
+                labels.current.get(lineKey(lastRemoved)) ?? lastRemoved.productId
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={undoRemove}
+              className="focus-ring tag shrink-0 border border-amber px-3 py-2 text-amber transition-colors hover:bg-amber hover:text-void"
+            >
+              {t.ordering.cart.undo}
+            </button>
+          </div>
+        )}
 
         {lines.length > 0 && (
           <div className="shrink-0 border-t border-line px-6 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            {/* Teslim biçimi burada da sorulur: teslimat ücreti ve minimum
+                sepet tutarı buna bağlı, dolayısıyla sepetteki eşik çubuğu
+                ancak seçim bilinirken doğru olabilir. Posta kodu ödeme
+                adımında; bu yüzden burada yalnızca iki seçenek var. */}
+            {status && status.deliveryEnabled && status.pickupEnabled && (
+              <div className="mb-4">
+                <div
+                  role="group"
+                  aria-label={t.cart.fulfillmentTitle}
+                  className="grid grid-cols-2 gap-px border border-line bg-line"
+                >
+                  {(["DELIVERY", "PICKUP"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setFulfillment(mode)}
+                      aria-pressed={fulfillment === mode}
+                      className={`focus-ring tag min-h-[44px] px-3 transition-colors ${
+                        fulfillment === mode
+                          ? "bg-amber/15 text-amber"
+                          : "bg-void text-smoke hover:text-bone"
+                      }`}
+                    >
+                      {mode === "DELIVERY"
+                        ? t.cart.fulfillmentDelivery
+                        : t.cart.fulfillmentPickup}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-smoke/60">
+                  {fulfillment === "DELIVERY"
+                    ? t.ordering.cart.zipHint
+                    : t.ordering.cart.fulfillmentHint}
+                </p>
+              </div>
+            )}
+
+            {/* eşik çubukları */}
+            {fulfillment === "DELIVERY" && totalsReady && (
+              <Thresholds quote={quote} status={status} />
+            )}
+
             {pricing === "error" && (
               <p role="alert" className="mb-3 text-xs text-flame">
                 {t.cart.priceError}
@@ -245,6 +453,136 @@ export default function CartDrawer() {
           </div>
         )}
       </div>
+
+      {editing && (
+        <ProductDialog
+          item={editing.item}
+          mode="edit"
+          initial={{
+            variantSize: editing.line.variantSize,
+            options: editing.line.options ?? [],
+            note: editing.line.note ?? "",
+            qty: editing.line.qty,
+          }}
+          onClose={() => setEditing(null)}
+          onSubmit={(draft: ProductDraft) => {
+            replace(lineKey(editing.line), {
+              kind: "product",
+              productId: editing.line.productId,
+              ...(draft.variantSize ? { variantSize: draft.variantSize } : {}),
+              ...(draft.options.length > 0 ? { options: draft.options } : {}),
+              ...(draft.note ? { note: draft.note } : {}),
+              qty: draft.qty,
+            });
+            setEditing(null);
+          }}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * Eşik çubukları — minimum sepet ve ücretsiz teslimat.
+ *
+ * İkisi de aynı görsel dili kullanır ama farklı şey söyler: biri **engel**
+ * (altındaysan sipariş veremezsin), diğeri **teşvik** (altındaysan ücret
+ * ödersin). Bu yüzden renkleri ayrı ve engelin metni her zaman önce gelir.
+ *
+ * Posta kodu seçilmemişken bölgeye özgü eşik bilinmez. O durumda bölgelerin
+ * **en düşük** eşiği "…'dan başlar" diye gösterilir: müşteri neyle karşı
+ * karşıya olduğunu bilir, ama kesin sayı ödeme adımında netleşir. Hiçbir şey
+ * göstermemek, sepeti doldurup ödeme adımında duvara toslamak demekti.
+ */
+function Thresholds({
+  quote,
+  status,
+}: {
+  quote: NonNullable<ReturnType<typeof useCart>["quote"]>;
+  status: MenuStatus | null;
+}) {
+  const { t } = useLanguage();
+  const c = t.ordering.cart;
+
+  const zone = quote.zone;
+  const subtotal = quote.subtotalCents;
+
+  // Bölge biliniyorsa kesin eşik, bilinmiyorsa en düşük bölge eşiği.
+  const minThreshold = zone ? zone.minOrderCents : (status?.minOrderFromCents ?? 0);
+  const freeThreshold = zone ? zone.freeOverCents : (status?.freeDeliveryFromCents ?? 0);
+
+  const min = thresholdProgress(subtotal, minThreshold);
+  const free = thresholdProgress(subtotal, freeThreshold);
+
+  if (!min.active && !free.active) return null;
+
+  return (
+    <div className="mb-4 space-y-3">
+      {min.active && (
+        <Bar
+          tone={min.reached ? "herb" : "flame"}
+          percent={min.percent}
+          label={
+            min.reached
+              ? c.minOrderReached
+              : zone
+                ? c.minOrderRemaining.replace("{amount}", formatCents(min.remainingCents))
+                : c.minOrderGeneric.replace("{amount}", formatCents(minThreshold))
+          }
+        />
+      )}
+      {free.active && (
+        <Bar
+          tone={free.reached ? "herb" : "amber"}
+          percent={free.percent}
+          label={
+            free.reached
+              ? c.freeDeliveryReached
+              : zone
+                ? c.freeDeliveryRemaining.replace("{amount}", formatCents(free.remainingCents))
+                : c.freeDeliveryGeneric.replace("{amount}", formatCents(freeThreshold))
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+const BAR_TONES = {
+  flame: { text: "text-flame", fill: "bg-flame" },
+  amber: { text: "text-amber", fill: "bg-amber" },
+  herb: { text: "text-herb", fill: "bg-herb" },
+} as const;
+
+function Bar({
+  tone,
+  percent,
+  label,
+}: {
+  tone: keyof typeof BAR_TONES;
+  percent: number;
+  label: string;
+}) {
+  const style = BAR_TONES[tone];
+  return (
+    <div>
+      <p className={`tag mb-1.5 ${style.text}`}>{label}</p>
+      {/* Çubuk `progressbar`: ekran okuyucu yüzdeyi de duyabilsin. Metin zaten
+          tam bilgiyi taşıdığı için çubuğun kendisi `aria-hidden` değil,
+          etiketli bir ölçü olarak sunuluyor. */}
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-label={label}
+        className="h-1.5 w-full overflow-hidden bg-line"
+      >
+        <div
+          className={`h-full transition-[width] duration-500 ${style.fill}`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
   );
 }

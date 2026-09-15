@@ -1,4 +1,5 @@
 import { formatEuro } from "@/lib/money";
+import type { OptionGroup } from "@/lib/menu/options";
 
 /**
  * Katalog veri modeli.
@@ -16,6 +17,14 @@ export type Variant = {
   size: string;
   price: number;
 };
+
+/** Beslenme rozeti; şemadaki `Diet` enum'unun alan modelindeki karşılığı. */
+export type DietTag = "NONE" | "VEGETARIAN" | "VEGAN";
+
+export const DIET_TAGS = ["NONE", "VEGETARIAN", "VEGAN"] as const;
+
+/** Acılık göstergesinin üst sınırı — menüde en fazla üç biber. */
+export const MAX_SPICY_LEVEL = 3;
 
 export type Product = {
   id: string;
@@ -48,8 +57,23 @@ export type Product = {
    */
   featured: boolean;
   variants: Variant[];
+  /**
+   * Ürüne bağlı seçenek grupları (et türü, sos, ekstra malzeme).
+   *
+   * Boş liste "seçeneksiz ürün" demektir ve menüde satır doğrudan sepete
+   * eklenir; grup varsa ürün penceresi açılır. Ek ücretler burada durur, taban
+   * fiyata eklenir — tutarı yine yalnızca sunucu hesaplar.
+   */
+  optionGroups: OptionGroup[];
   /** Menüdeki sıra; küçük olan üstte. */
   sortOrder: number;
+
+  /* --- menü rozetleri (işletmecinin beyanı, hesaplanmış değil) --- */
+  isPopular: boolean;
+  isNew: boolean;
+  diet: DietTag;
+  /** 0 = işaret yok, 1–3 arası biber sayısı. */
+  spicyLevel: number;
 
   /**
    * KDV oranı (7 veya 19) — sabit değil, **ürün başına**.
@@ -102,8 +126,10 @@ export type Catalog = {
  * 3 → fiyat tek kaynağa taşındı: servis ücreti (`settings`) katalogun parçası
  *     oldu. Bu sürümde ayrıca "kendin seç" yapılandırıcısı vardı; bölüm
  *     kaldırıldığında ayarları okunmaz oldu, kayıtlar yerinde bırakıldı.
+ * 4 → ürün başına seçenek grupları (et türü, sos, ekstra) ve menü rozetleri
+ *     (beliebt / neu / vegetarisch / scharf) katalogun parçası oldu.
  */
-export const CATALOG_VERSION = 3;
+export const CATALOG_VERSION = 4;
 
 /** Müşteri tarafına gönderilen, kategorileriyle gruplanmış görünüm. */
 export type PublicCategory = Category & { products: Product[] };
@@ -116,6 +142,22 @@ export function formatPrice(value: number): string {
 /** Ürünün geçerli satış fiyatı: indirim varsa indirimli olan. */
 export function effectivePrice(product: Pick<Product, "price" | "discountPrice">): number {
   return product.discountPrice ?? product.price;
+}
+
+/**
+ * İndirim yüzdesi ("−20 %" rozeti için); indirim yoksa null.
+ *
+ * Aşağı yuvarlanır: %19,6'lık bir indirimi "%20" diye göstermek, PAngV'nin
+ * fiyat reklamı beklentisi açısından müşteri lehine olmayan bir abartmadır.
+ * Sıfıra yuvarlanan (%1'in altında) bir indirim rozet olarak gösterilmez.
+ */
+export function discountPercent(
+  product: Pick<Product, "price" | "discountPrice">
+): number | null {
+  const { price, discountPrice } = product;
+  if (discountPrice === null || price <= 0 || discountPrice >= price) return null;
+  const percent = Math.floor(((price - discountPrice) / price) * 100);
+  return percent > 0 ? percent : null;
 }
 
 /** "7,00 €" / "+ 1,00 €" → 7 / 1. Parse edilemezse null. */

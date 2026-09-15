@@ -51,6 +51,11 @@ export async function POST(request: Request) {
     showOnHome: value.showOnHome ?? true,
     featured: value.featured ?? false,
     variants: value.variants ?? [],
+    optionGroups: value.optionGroups ?? [],
+    isPopular: value.isPopular ?? false,
+    isNew: value.isNew ?? false,
+    diet: value.diet ?? "NONE",
+    spicyLevel: value.spicyLevel ?? 0,
   }));
   if (product instanceof NextResponse) return product;
 

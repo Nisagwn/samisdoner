@@ -81,6 +81,19 @@ model Product {
   featured   Boolean @default(false)
   sortOrder  Int     @default(0)
 
+  /// Menüdeki rozetler.
+  ///
+  /// Hepsi **işletmecinin beyanı**, hesaplanmış bir değer değil: "beliebt"
+  /// sipariş sayısından türetilmez (yeni açılan bir dükkânda o sayı sıfırdır
+  /// ve rozet hiç çıkmaz), panelden işaretlenir. Rozetin işi müşterinin altmış
+  /// satırlık listede nereye bakacağını bilmesi.
+  isPopular Boolean @default(false)
+  isNew     Boolean @default(false)
+  diet      Diet    @default(NONE)
+  /// Acılık: 0 = işaret yok, 1–3 arası biber sayısı. Serbest metin değil,
+  /// çünkü menüde karşılaştırılabilir olmalı.
+  spicyLevel Int    @default(0)
+
   /// KDV oranı — **sabit değil, ürün başına**. Steueränderungsgesetz 2025
   /// (§ 12 Abs. 2 Nr. 15 UStG) ile 01.01.2026'dan itibaren: tüm yemekler %7
   /// (yerinde/paket/teslimat ayrımı kalktı), tüm içecekler %19. İstisna:
@@ -103,9 +116,10 @@ model Product {
   /// İstisna DAR yorumlanır: kapalı şişe içecek bozulmaz, kapsam dışıdır.
   isPerishable Boolean @default(true)
 
-  variants  Variant[]
-  lines     OrderLine[]
-  favorites Favorite[]
+  variants     Variant[]
+  optionGroups OptionGroup[]
+  lines        OrderLine[]
+  favorites    Favorite[]
 
   @@index([categoryId, sortOrder])
 }
@@ -121,6 +135,70 @@ model Variant {
   sortOrder  Int    @default(0)
 
   @@unique([productId, size])
+}
+
+/**
+ * ───────────────────────────────────────────── ürün seçenekleri (kullanımda)
+ *
+ * "Et türü", "Soßen", "Extras" — müşterinin ürün penceresinde yaptığı seçimler.
+ *
+ * NEDEN AŞAĞIDAKİ `BuilderGroup` YENİDEN CANLANDIRILMADI
+ *
+ * O iki tablo **ürüne bağlı değil**: `BuilderGroup` global bir listedir, çünkü
+ * kaldırılan "Kendin Seç" bölümünde tek bir döner kuruluyordu ve gruplar o tek
+ * ürünün adımlarıydı. Buraya `productId` eklemek, tabloda duran mevcut
+ * satırların hangi ürüne ait olduğu sorusunu cevapsız bırakırdı (hepsi mi?
+ * hiçbiri mi?) ve "veri duruyor, bölüm geri gelirse göç gerekmez" notunu
+ * geçersiz kılardı. Ayrıca `BuilderOption` yapılandırıcıya özgü alanlar taşıyor
+ * (kcal, image) ve seçim sayısı kuralı (min/max) hiç yok.
+ *
+ * Bu yüzden ürün başına yeni bir model kuruldu; `BuilderGroup`/`BuilderOption`
+ * olduğu gibi, kullanım dışı olarak duruyor.
+ */
+
+model OptionGroup {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// Grup başlığı ("Fleisch", "Soßen"). Türkçesi boşsa Almancası kullanılır.
+  name   String
+  nameTr String @default("")
+
+  /// En az kaç seçenek işaretlenmeli. 0 = grup isteğe bağlı.
+  /// > 0 ise seçim yapılmadan sipariş satırı oluşturulamaz: et türü seçilmemiş
+  /// bir döneri mutfak hazırlayamaz, bu yüzden kural sunucuda da uygulanır.
+  minSelect Int @default(0)
+  /// En fazla kaç seçenek. 1 = tek seçim (radyo), >1 = çoklu (onay kutusu).
+  /// Ayrı bir "mod" sütunu yok; olsaydı iki alan birbiriyle çelişebilirdi.
+  maxSelect Int @default(1)
+
+  sortOrder Int @default(0)
+
+  choices OptionChoice[]
+
+  @@index([productId, sortOrder])
+}
+
+model OptionChoice {
+  id      String      @id @default(cuid())
+  groupId String
+  group   OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  name   String
+  nameTr String @default("")
+
+  /// Taban fiyata eklenen **ek ücret** (cent). 0 = dahil.
+  /// Adetle çarpılmaz, birim fiyata eklenir: (taban + ek) × adet.
+  priceCents Int @default(0)
+
+  /// Pencere açıldığında önden işaretli gelsin mi. Ücretli bir seçeneği
+  /// varsayılan yapmak sessizce para eklemek olur; panel bunu uyarır.
+  isDefault Boolean @default(false)
+
+  sortOrder Int @default(0)
+
+  @@index([groupId, sortOrder])
 }
 
 /**
@@ -572,6 +650,14 @@ model LoginAttempt {
 enum BuilderMode {
   single
   multi
+}
+
+/// Menüdeki beslenme rozeti. LMIV kapsamında bir beyan değildir — "vegan"
+/// işareti mutfağın taahhüdüdür, alerjen bildiriminin yerine geçmez.
+enum Diet {
+  NONE
+  VEGETARIAN
+  VEGAN
 }
 
 enum LineKind {
