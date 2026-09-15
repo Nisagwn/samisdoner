@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import OrderFeed from "@/components/admin/OrderFeed";
+import ShiftControls from "@/components/admin/ShiftControls";
 
 /**
  * Sipariş takibi.
@@ -26,6 +27,10 @@ export default function AdminOrdersPage() {
           Sesli uyarı, siparişe &quot;Görüldü&quot; denene kadar sürer.
         </p>
       </header>
+
+      {/* Vardiya şeridi panonun ÜSTÜNDE: yoğunluk cevabı sipariş listesine
+          bakarken verilir, ayarlar ekranına gidilerek değil. */}
+      <ShiftControls />
 
       <OrderFeed />
     </div>

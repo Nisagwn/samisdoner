@@ -6,6 +6,7 @@ import { InvalidTransitionError, needsRefund } from "@/lib/orders/status";
 import { buildCancelReason } from "@/lib/orders/cancelReasons";
 import { delayOrderPromise, transitionOrder } from "@/lib/orders/repository";
 import { refundOrder } from "@/lib/orders/refund";
+import { isPrepChoice, setPromiseFromNow } from "@/lib/admin/promise";
 
 /**
  * Sipariş durumunu ilerletir, siparişi "görüldü" olarak işaretler, teslim
@@ -43,6 +44,18 @@ const bodySchema = z.union([
     reasonId: z.string().trim().max(40).optional(),
     /** Yalnızca "OTHER" seçildiğinde anlamlı; müşteriye olduğu gibi gider. */
     reasonNote: z.string().trim().max(300).optional(),
+    /*
+     * Kabul ederken seçilen hazırlık süresi (dakika).
+     *
+     * Yalnızca "Kabul et" adımında anlamlı ve isteğe bağlı: seçilmezse
+     * sipariş anındaki tahmin olduğu gibi kalır. Serbest sayı değil, listeden
+     * bir değer — bkz. lib/admin/promise.ts.
+     */
+    prepMinutes: z
+      .number()
+      .int()
+      .refine(isPrepChoice, "Geçersiz hazırlık süresi.")
+      .optional(),
   }),
   /*
    * Gecikme bildirimi. Serbest dakika kabul edilmez, sabit basamaklar var:
@@ -137,6 +150,18 @@ export async function PATCH(request: Request, { params }: Params) {
     });
 
     /*
+     * Hazırlık süresi, durum geçişinden **sonra** yazılır.
+     *
+     * Sıra önemli: geçiş reddedilirse (eskimiş panel görünümü, iki kez
+     * tıklanmış düğme) müşteriye yeni bir saat söz verilmiş olmaz. Ters
+     * sırada olsaydı, kabul edilmemiş bir siparişin teslim saati değişirdi.
+     */
+    let promisedAt: Date | null = null;
+    if (parsed.data.prepMinutes !== undefined && parsed.data.status === "ACCEPTED") {
+      promisedAt = await setPromiseFromNow(params.id, parsed.data.prepMinutes, "admin");
+    }
+
+    /*
      * İade.
      *
      * Durum değişiminden **sonra** çağrılır, bilinçli olarak: iade başarısız
@@ -169,7 +194,11 @@ export async function PATCH(request: Request, { params }: Params) {
       });
     }
 
-    return NextResponse.json({ ok: true, status: order.status });
+    return NextResponse.json({
+      ok: true,
+      status: order.status,
+      promisedAt: (promisedAt ?? order.promisedAt)?.toISOString() ?? null,
+    });
   } catch (error) {
     // İki kez tıklanan bir buton ya da eskimiş bir panel görünümü: kullanıcı
     // hatası, sunucu hatası değil.
