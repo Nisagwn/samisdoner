@@ -78,6 +78,15 @@ export default function RewardRedeem() {
         </button>
       </div>
 
+      {/* Kutuyu ayda bir açan personel ne yaptığını hatırlamak zorunda
+          kalmasın: kodun nereden geldiği ve girince ne olduğu burada yazılı. */}
+      <p className="mt-2 text-xs leading-relaxed text-smoke">
+        Üye müşteri teslim edilen her siparişte bir damga toplar; 10 damgada hesabında 90 gün
+        geçerli bir ödül kodu açılır. Müşteri kodu söyleyince buraya girin: kod kullanıldı
+        olarak işaretlenir ve bir daha çalışmaz. Ödülü (ör. bir döner) siz ücretsiz verirsiniz —
+        sipariş tutarından kendiliğinden düşülmez.
+      </p>
+
       <form onSubmit={redeem} className="mt-3 flex flex-wrap items-end gap-3">
         <label className="block min-w-[200px] flex-1">
           <span className="tag mb-1.5 block text-smoke">Müşterinin kodu</span>
