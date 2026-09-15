@@ -1,11 +1,13 @@
 import {
-  buildVatBreakdown,
   priceCart,
   type CartLineInput,
   type PricedLine,
   type VatBucket,
 } from "@/lib/admin/store";
 import { checkOrderability, deliveryFeeFor, type RejectionReason } from "./availability";
+import { evaluateCoupon, findCouponRule, type CouponRejection } from "./coupon";
+import { clampTip } from "./tip";
+import { composeTotals } from "./totals";
 
 /**
  * Ödeme adımının **tek** hesabı.
@@ -40,7 +42,15 @@ export type CheckoutQuote = {
   serviceFeeCents: number;
   /** Kurye ücreti. Gel-alda ve bölge seçilmemişken 0. */
   deliveryFeeCents: number;
-  /** Ara toplam + servis ücreti + teslimat ücreti. Müşteriye gösterilecek tutar. */
+  /** Uygulanan kupon indirimi (pozitif cent); kupon yoksa 0. */
+  discountCents: number;
+  /** Kabul edilen kuponun kodu; kupon yoksa ya da reddedildiyse boş. */
+  couponCode: string;
+  /** Kod girildi ama kabul edilmediyse sebebi; aksi hâlde null. */
+  couponRejection: CouponRejection | null;
+  /** Bahşiş (pozitif cent). Toplama eklenir, KDV matrahına girmez. */
+  tipCents: number;
+  /** Ara toplam + ücretler − indirim + bahşiş. Müşteriye gösterilecek tutar. */
   totalCents: number;
   /** Ücretsiz servise kalan tutar; eşik yoksa veya aşıldıysa 0. */
   remainingForFreeServiceCents: number;
@@ -67,6 +77,12 @@ export async function buildCheckoutQuote(input: {
   fulfillment: "DELIVERY" | "PICKUP";
   /** Teslimat posta kodu. Gel-alda ve müşteri henüz seçmediyse boş. */
   zip?: string;
+  /** Müşterinin girdiği kupon kodu; boşsa kupon hiç sorgulanmaz. */
+  couponCode?: string;
+  /** Müşterinin bıraktığı bahşiş (cent); sunucuda kelepçelenir. */
+  tipCents?: number;
+  /** İleri saatli siparişte istenen teslim saati; "en kısa sürede"de boş. */
+  requestedAt?: Date | null;
 }): Promise<CheckoutQuote> {
   const quote = await priceCart(input.lines, input.lang);
 
@@ -74,32 +90,59 @@ export async function buildCheckoutQuote(input: {
     fulfillment: input.fulfillment,
     zip: input.zip,
     subtotalCents: quote.subtotalCents,
+    requestedAt: input.requestedAt ?? null,
   });
 
   const zone = orderability.zone;
   const deliveryFeeCents = zone ? deliveryFeeFor(zone, quote.subtotalCents) : 0;
 
   /*
-   * KDV dökümü, siparişe yazılanla **aynı fonksiyondan** üretilir
-   * (`buildVatBreakdown`) ve yan edim olarak servis + teslimat ücretinin
-   * toplamı verilir. `createOrder` da birebir aynısını yapar; dolayısıyla
-   * çekmecede gösterilen döküm ile faturaya yazılan döküm ayrışamaz.
+   * Kupon.
+   *
+   * Reddedilen kupon **akışı durdurmaz**: indirim 0 kalır, sebep ayrı bir
+   * alanda taşınır ve müşteri kod alanının altında görür. Geçersiz bir kod
+   * yüzünden "sipariş verilemez" demek, kodu silmeyi bilmeyen müşteriyi
+   * sepette kilitler.
    */
-  const extraCents = quote.serviceFeeCents + deliveryFeeCents;
+  const code = (input.couponCode ?? "").trim();
+  const coupon = code
+    ? evaluateCoupon(await findCouponRule(code), {
+        subtotalCents: quote.subtotalCents,
+        fulfillment: input.fulfillment,
+      })
+    : null;
 
-  return {
+  /*
+   * Toplam ve KDV dökümü, siparişe yazılanla **aynı fonksiyondan** üretilir
+   * (`composeTotals`). `createOrder` da birebir aynısını çağırır; dolayısıyla
+   * ekranda gösterilen döküm ile faturaya yazılan döküm ayrışamaz.
+   */
+  const totals = composeTotals({
     lines: quote.lines,
     subtotalCents: quote.subtotalCents,
     serviceFeeCents: quote.serviceFeeCents,
     deliveryFeeCents,
-    totalCents: quote.subtotalCents + extraCents,
+    discountCents: coupon?.ok ? coupon.discountCents : 0,
+    tipCents: clampTip(input.tipCents, quote.subtotalCents),
+  });
+
+  return {
+    lines: quote.lines,
+    subtotalCents: totals.subtotalCents,
+    serviceFeeCents: totals.serviceFeeCents,
+    deliveryFeeCents: totals.deliveryFeeCents,
+    discountCents: totals.discountCents,
+    couponCode: coupon?.ok ? coupon.code : "",
+    couponRejection: coupon && !coupon.ok ? coupon.reason : null,
+    tipCents: totals.tipCents,
+    totalCents: totals.totalCents,
     remainingForFreeServiceCents: quote.remainingForFreeServiceCents,
     freeServiceOverCents: quote.freeServiceOverCents,
     remainingForMinimumCents:
       zone && quote.subtotalCents > 0 && quote.subtotalCents < zone.minOrderCents
         ? zone.minOrderCents - quote.subtotalCents
         : 0,
-    vatBreakdown: buildVatBreakdown(quote.lines, extraCents),
+    vatBreakdown: totals.vatBreakdown,
     currency: "EUR",
 
     fulfillment: input.fulfillment,

@@ -1,3 +1,6 @@
+import type { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/db";
+
 /**
  * Gutscheincode — indirim kuponu.
  *
@@ -151,4 +154,81 @@ export function discountFor(
   }
 
   return Math.min(discount, base);
+}
+
+/* ═════════════════════════════════════════════════════════════ veri katmanı */
+
+/**
+ * Kodun kuralını okur; yoksa null.
+ *
+ * Önbelleklenmez, bilinçli olarak: satır `redeemedCount` ile birlikte okunuyor
+ * ve o sayı her siparişte değişiyor — bayat bir sayaç, tükenmiş bir kampanyayı
+ * beş dakika daha açık gösterir. Kuponlar zaten her sepet yenilemesinde değil,
+ * yalnızca müşteri kod girdiğinde okunuyor.
+ */
+export async function findCouponRule(code: string): Promise<CouponRule | null> {
+  const normalized = normalizeCouponCode(code);
+  if (!normalized) return null;
+
+  const row = await prisma.coupon.findUnique({ where: { code: normalized } });
+  if (!row) return null;
+
+  return {
+    code: row.code,
+    kind: row.kind,
+    value: row.value,
+    minOrderCents: row.minOrderCents,
+    maxDiscountCents: row.maxDiscountCents,
+    fulfillment: row.fulfillment,
+    startsAt: row.startsAt,
+    expiresAt: row.expiresAt,
+    maxRedemptions: row.maxRedemptions,
+    redeemedCount: row.redeemedCount,
+    active: row.active,
+  };
+}
+
+/**
+ * Kuponun bu siparişte kullanıldığını yazar.
+ *
+ * Sayaç **koşullu** artırılır: sınır dolmuşsa UPDATE hiçbir satıra dokunmaz ve
+ * fonksiyon `false` döner. Aynı kuponla eşzamanlı gelen iki sipariş arasındaki
+ * yarış böylece veritabanı seviyesinde çözülür; uygulama katmanında "önce oku,
+ * sonra yaz" yapan bir kontrol bu yarışı kaybeder ve 50 kullanımlık kampanya
+ * 52 kez kullanılabilirdi.
+ *
+ * Sipariş işleminin **içinde** çağrılır: kupon yazılamazsa sipariş de yazılmaz,
+ * dolayısıyla indirimi uygulanmış ama kullanımı sayılmamış bir sipariş oluşamaz.
+ */
+export async function redeemCoupon(
+  tx: Prisma.TransactionClient,
+  input: { code: string; orderId: string; amountCents: number }
+): Promise<boolean> {
+  const code = normalizeCouponCode(input.code);
+  if (!code || input.amountCents <= 0) return false;
+
+  const coupon = await tx.coupon.findUnique({
+    where: { code },
+    select: { id: true, maxRedemptions: true },
+  });
+  if (!coupon) return false;
+
+  const updated = await tx.coupon.updateMany({
+    where: {
+      id: coupon.id,
+      active: true,
+      // Sınırsız kuponda koşul her zaman doğrudur; sınırlıda sayaç tavana
+      // dayandığı anda UPDATE hiçbir satır bulamaz.
+      ...(coupon.maxRedemptions > 0
+        ? { redeemedCount: { lt: coupon.maxRedemptions } }
+        : {}),
+    },
+    data: { redeemedCount: { increment: 1 } },
+  });
+  if (updated.count === 0) return false;
+
+  await tx.couponRedemption.create({
+    data: { couponId: coupon.id, orderId: input.orderId, amountCents: input.amountCents },
+  });
+  return true;
 }

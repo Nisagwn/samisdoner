@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { CACHE_KEYS, cached } from "@/lib/cache";
+import { buildTimeSlots, isSelectableSlot, type TimeSlot } from "./slots";
 
 /**
  * Siparişin kabul edilip edilmeyeceğine dair kurallar.
@@ -86,8 +87,15 @@ function berlinNow(now: Date = new Date()): {
   };
 }
 
-/** Haftalık çalışma saatleri — yedi günün tamamı, önbellekten. */
-function weeklyHours(): Promise<{ weekday: number; openMinute: number; closeMinute: number }[]> {
+/**
+ * Haftalık çalışma saatleri — yedi günün tamamı, önbellekten.
+ *
+ * Dışarı açık: ileri saatli sipariş (Vorbestellung) için seçilebilir zaman
+ * aralıkları da aynı tablodan üretiliyor (bkz. lib/orders/slots.ts). İkinci bir
+ * okuma yolu açmak, "açık mıyız" ile "hangi saatler seçilebilir" sorularının
+ * farklı tablolardan cevaplanması demek olurdu.
+ */
+export function weeklyHours(): Promise<{ weekday: number; openMinute: number; closeMinute: number }[]> {
   return cached(CACHE_KEYS.openingHours, BUSINESS_MAX_AGE_SECONDS, () =>
     prisma.openingHour.findMany({
       select: { weekday: true, openMinute: true, closeMinute: true },
@@ -102,7 +110,7 @@ function weeklyHours(): Promise<{ weekday: number; openMinute: number; closeMinu
  * satırdır ve günlük anahtar kullanmak, panelden tatil eklendiğinde hangi
  * günün anahtarının düşürüleceğini takip etmeyi gerektirirdi.
  */
-function upcomingClosures(): Promise<string[]> {
+export function upcomingClosures(): Promise<string[]> {
   return cached(CACHE_KEYS.closures, BUSINESS_MAX_AGE_SECONDS, async () => {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
@@ -142,6 +150,53 @@ export async function isOpenNow(now: Date = new Date()): Promise<boolean> {
     }
     // Bir önceki günün gece yarısını aşan aralığı bugüne sarkıyor mu.
     return wraps && minutes < h.closeMinute;
+  });
+}
+
+/* ------------------------------------------- ileri saatli sipariş (Vorbestellung) */
+
+/**
+ * Seçilebilir teslim saatleri — çalışma saatleri ve tatil günlerinden.
+ *
+ * Hazırlık payı ayarlardan gelir: mutfak 30 dakikada yetiştiriyorsa en erken
+ * kutu 30 dakika sonrasıdır. Aynı veriyle hem liste üretilir hem de gelen
+ * seçim doğrulanır; iki ayrı kaynak olsaydı listede olmayan bir saatin kabul
+ * edilmesi an meselesiydi.
+ */
+export async function getSchedulableSlots(now: Date = new Date()): Promise<TimeSlot[]> {
+  const [hours, closedDays, settings] = await Promise.all([
+    weeklyHours(),
+    upcomingClosures(),
+    getOrderSettings(),
+  ]);
+
+  return buildTimeSlots({ hours, closedDays, now, leadMinutes: settings.prepMinutes });
+}
+
+/**
+ * İstemciden gelen teslim saatinin kabul edilebilirliği.
+ *
+ * `ORDERS_IGNORE_OPENING_HOURS` burada da geçerlidir: akışı kapalıyken
+ * denemenin tek yolu bu değişken ve ön siparişin kapıyı kapatması anlamsız
+ * olurdu.
+ */
+export async function isSchedulableAt(
+  requestedAt: Date,
+  now: Date = new Date()
+): Promise<boolean> {
+  if (openingHoursBypassed()) return requestedAt.getTime() > now.getTime();
+
+  const [hours, closedDays, settings] = await Promise.all([
+    weeklyHours(),
+    upcomingClosures(),
+    getOrderSettings(),
+  ]);
+
+  return isSelectableSlot(requestedAt, {
+    hours,
+    closedDays,
+    now,
+    leadMinutes: settings.prepMinutes,
   });
 }
 
@@ -212,7 +267,15 @@ export type RejectionReason =
   | { code: "closed" }
   | { code: "fulfillment_disabled"; fulfillment: "DELIVERY" | "PICKUP" }
   | { code: "out_of_delivery_area"; zip: string }
-  | { code: "below_minimum"; minOrderCents: number; subtotalCents: number };
+  | { code: "below_minimum"; minOrderCents: number; subtotalCents: number }
+  /**
+   * İleri saatli siparişte seçilen teslim saati artık geçerli değil.
+   *
+   * Müşteri sayfayı açtıktan sonra saat ilerlemiş, panelden kapanış saati
+   * değişmiş ya da o güne tatil girilmiş olabilir. "Kapalıyız" demek yanlış
+   * olurdu — dükkân açık, seçilen saat geçersiz.
+   */
+  | { code: "slot_unavailable" };
 
 export type OrderabilityResult =
   | { ok: true; zone: DeliveryZoneInfo | null; etaMinutes: number }
@@ -237,13 +300,28 @@ export async function checkOrderability(input: {
   zip?: string;
   subtotalCents: number;
   now?: Date;
+  /**
+   * İleri saatli siparişte istenen teslim saati; "en kısa sürede"de boş.
+   *
+   * Dolu olduğunda **"şu an açık mıyız" kontrolünün yerini alır**: ön
+   * siparişin bütün anlamı, dükkân kapalıyken akşamki servise sipariş
+   * verebilmektir. Yerine geçen kontrol daha dar: seçilen saat gerçekten
+   * açılış saatleri içinde, hazırlık payından sonra ve kapalı bir güne
+   * denk gelmiyor olmalı (bkz. `isSelectableSlot`).
+   */
+  requestedAt?: Date | null;
 }): Promise<OrderabilityResult> {
   const settings = await getOrderSettings();
   if (!settings.orderingEnabled) {
     return { ok: false, reason: { code: "ordering_paused" }, zone: null };
   }
 
-  if (!(await isOpenNow(input.now))) return { ok: false, reason: { code: "closed" }, zone: null };
+  if (input.requestedAt) {
+    const selectable = await isSchedulableAt(input.requestedAt, input.now);
+    if (!selectable) return { ok: false, reason: { code: "slot_unavailable" }, zone: null };
+  } else if (!(await isOpenNow(input.now))) {
+    return { ok: false, reason: { code: "closed" }, zone: null };
+  }
 
   if (input.fulfillment === "DELIVERY" && !settings.deliveryEnabled) {
     return {
