@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import {
+  ENV_OWNER_ID,
   SESSION_COOKIE,
   SESSION_MAX_AGE,
   createSessionToken,
   sessionCookieOptions,
-  verifyPassword,
+  verifyEnvPassword,
 } from "@/lib/admin/auth";
+import { authenticateStaff, countOwners } from "@/lib/admin/staff";
+import { readRecoveryFlag, sharedPasswordMode } from "@/lib/admin/recovery";
+import { withDatabase } from "@/lib/security/dbGuard";
 import {
   checkThrottle,
   clearAttempts,
@@ -14,58 +19,145 @@ import {
   throttleKeys,
 } from "@/lib/security/throttle";
 
+/**
+ * Panel girişi.
+ *
+ * Olağan hâlde **tek yol** vardır: e-posta + parola. Oturum bir kişiyi taşır,
+ * rolü kendi kaydından gelir, yaptığı işlemler o kişinin adına yazılır.
+ *
+ * Ortak parola (`ADMIN_PASSWORD`) bir giriş yöntemi değil, **kurulum
+ * anahtarıdır**: yalnızca panelde hiç etkin sahip hesabı yokken ya da sunucuda
+ * `ADMIN_RECOVERY` açıkken çalışır (bkz. lib/admin/recovery.ts). İşletmeci
+ * kendi hesabını açtığı an bu yol kendiliğinden kapanır — yani canlıda kalıcı
+ * bir ikinci giriş kalmaz.
+ *
+ * Hangi yolun denendiği gövdedeki `email` alanının varlığından anlaşılır.
+ * Hata mesajı iki yolda da aynı: "hangi e-posta kayıtlı" sorusunun cevabı bir
+ * giriş formundan okunmamalı.
+ *
+ * Kısıtlayıcı veritabanında (`lib/security/throttle.ts`). Bellekteki bir
+ * sayaç sunucu yeniden başlayınca sıfırlanır ve çok örnekli dağıtımda hiç
+ * çalışmaz — her istek başka bir örneğe düşer, hiçbiri diğerinin sayacını
+ * görmez.
+ */
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/*
- * Kısıtlayıcı artık veritabanında (`lib/security/throttle.ts`).
- *
- * Buradaki eski sayaç bir `Map` idi, yani süreç belleğinde. Bu, tek örnekli
- * geliştirme sunucusunda çalışıyor gibi görünür ama canlıda hiçbir şey yapmaz:
- * her istek başka bir sunucusuz örneğe düşer ve hiçbiri diğerinin sayacını
- * görmez; sunucu yeniden başladığında da sayaç sıfırlanır. `LoginAttempt`
- * tablosu şemaya tam bu yüzden konmuştu ama kullanılmıyordu.
- */
+const bodySchema = z.object({
+  /** Boş bırakılırsa ortak parola yolu denenir. */
+  email: z.string().trim().toLowerCase().max(160).optional().default(""),
+  password: z.string().min(1).max(200),
+});
+
+/** Giriş denemesinin sonucu ne olursa olsun aynı cümle görünür. */
+const WRONG = "E-posta veya parola hatalı.";
 
 export async function POST(request: Request) {
-  const ip = clientIp(request);
-  const keys = [throttleKeys.adminIp(ip)];
+  return withDatabase(async () => {
+    const ip = clientIp(request);
+    const keys = [throttleKeys.adminIp(ip)];
 
-  const throttle = await checkThrottle(keys);
-  if (throttle.blocked) {
-    return NextResponse.json(
-      { error: "Çok fazla deneme yapıldı. Lütfen birkaç dakika sonra tekrar deneyin." },
-      { status: 429, headers: { "Retry-After": String(throttle.retryAfterSeconds) } }
+    const throttle = await checkThrottle(keys);
+    if (throttle.blocked) {
+      return NextResponse.json(
+        { error: "Çok fazla deneme yapıldı. Lütfen birkaç dakika sonra tekrar deneyin." },
+        { status: 429, headers: { "Retry-After": String(throttle.retryAfterSeconds) } }
+      );
+    }
+
+    if (!process.env.ADMIN_SESSION_SECRET) {
+      return NextResponse.json(
+        { error: "Sunucuda ADMIN_SESSION_SECRET tanımlı değil." },
+        { status: 500 }
+      );
+    }
+
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Geçersiz istek." }, { status: 400 });
+    }
+
+    const parsed = bodySchema.safeParse(raw);
+    if (!parsed.success) {
+      return NextResponse.json({ error: WRONG }, { status: 401 });
+    }
+
+    const { email, password } = parsed.data;
+
+    /*
+     * Kullanıcı yolu.
+     *
+     * Ortak parolaya **düşülmez**: e-posta yazılmışsa niyet bellidir ve
+     * yanlış parolada sessizce ortak parolayı denemek, bir kullanıcının
+     * hesabına başkasının kimliğiyle girmesine yol açardı.
+     */
+    if (email) {
+      const user = await authenticateStaff(email, password);
+      if (!user) {
+        await recordFailure(keys);
+        return NextResponse.json({ error: WRONG }, { status: 401 });
+      }
+
+      await clearAttempts(keys);
+      return withSession(
+        { userId: user.id, role: user.role, tokenVersion: user.tokenVersion },
+        { email: user.email, role: user.role }
+      );
+    }
+
+    /*
+     * Ortak parola yolu.
+     *
+     * Kip **her istekte** yeniden hesaplanır, önbelleğe alınmaz: sahip hesabı
+     * açıldığı anda bu yol kapanmalı, bir sonraki dağıtımı beklememeli.
+     */
+    const mode = sharedPasswordMode({
+      activeOwners: await countOwners(),
+      recoveryFlag: readRecoveryFlag(process.env.ADMIN_RECOVERY),
+      passwordConfigured: Boolean(process.env.ADMIN_PASSWORD),
+    });
+
+    if (mode === "closed") {
+      /*
+       * Burada `WRONG` yazılmaz. O cümle "hangi e-posta kayıtlı" sorusunu
+       * gizlemek içindir; burada gizlenecek bir şey yok ve yanlış parola
+       * sanan işletmeci ortak parolayı denemeye devam eder. Doğrusunu söylemek
+       * kimseye bir şey sızdırmaz: yolun kapalı olduğu zaten kuralın kendisi.
+       */
+      await recordFailure(keys);
+      return NextResponse.json(
+        {
+          error:
+            "Ortak parolayla giriş kapalı. Lütfen kendi e-postanız ve parolanızla girin.",
+        },
+        { status: 403 }
+      );
+    }
+
+    if (!(await verifyEnvPassword(password))) {
+      await recordFailure(keys);
+      return NextResponse.json({ error: WRONG }, { status: 401 });
+    }
+
+    await clearAttempts(keys);
+    return withSession(
+      { userId: ENV_OWNER_ID, role: "OWNER", tokenVersion: 0 },
+      { email: "", role: "OWNER", recovery: true, setup: mode === "setup" }
     );
-  }
+  });
+}
 
-  if (!process.env.ADMIN_PASSWORD || !process.env.ADMIN_SESSION_SECRET) {
-    return NextResponse.json(
-      { error: "Sunucuda ADMIN_PASSWORD / ADMIN_SESSION_SECRET tanımlı değil." },
-      { status: 500 }
-    );
-  }
-
-  let password = "";
-  try {
-    const body = (await request.json()) as { password?: unknown };
-    if (typeof body.password === "string") password = body.password;
-  } catch {
-    return NextResponse.json({ error: "Geçersiz istek." }, { status: 400 });
-  }
-
-  if (!(await verifyPassword(password))) {
-    await recordFailure(keys);
-    // hangi alanın yanlış olduğunu sızdırmayan tek tip mesaj
-    return NextResponse.json({ error: "Parola hatalı." }, { status: 401 });
-  }
-
-  await clearAttempts(keys);
-
-  const response = NextResponse.json({ ok: true });
+async function withSession(
+  session: Parameters<typeof createSessionToken>[0],
+  body: Record<string, unknown>
+) {
+  const response = NextResponse.json({ ok: true, ...body });
   response.cookies.set(
     SESSION_COOKIE,
-    await createSessionToken(),
+    await createSessionToken(session),
     sessionCookieOptions(SESSION_MAX_AGE)
   );
   return response;

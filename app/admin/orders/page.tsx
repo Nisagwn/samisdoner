@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import OrderFeed from "@/components/admin/OrderFeed";
+import ShiftControls from "@/components/admin/ShiftControls";
+import RewardRedeem from "@/components/admin/RewardRedeem";
 
 /**
  * Sipariş takibi.
@@ -26,6 +28,16 @@ export default function AdminOrdersPage() {
           Sesli uyarı, siparişe &quot;Görüldü&quot; denene kadar sürer.
         </p>
       </header>
+
+      {/* Vardiya şeridi panonun ÜSTÜNDE: yoğunluk cevabı sipariş listesine
+          bakarken verilir, ayarlar ekranına gidilerek değil. */}
+      <ShiftControls />
+
+      {/* Ödül kodu panonun içinde: müşteri kodu telefonda ya da kapıda
+          söylüyor, yani bu iş tam olarak panoya bakılırken yapılıyor. */}
+      <div className="flex flex-wrap gap-3">
+        <RewardRedeem />
+      </div>
 
       <OrderFeed />
     </div>

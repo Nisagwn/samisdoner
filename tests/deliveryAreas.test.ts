@@ -5,7 +5,9 @@ import {
   citiesForPostalCode,
 } from "@/data/deliveryAreas";
 import {
+  foldForSearch,
   groupZonesByCity,
+  matchesZoneSearch,
   knownCityNames,
   postalCodeCandidates,
   type ZoneRow,
@@ -150,5 +152,85 @@ describe("panel aday posta kodları", () => {
     const names = knownCityNames();
     expect(new Set(names).size).toBe(names.length);
     expect([...names].sort((a, b) => a.localeCompare(b, "de"))).toEqual(names);
+  });
+});
+
+/**
+ * Panelin arama kutusu. Almanca yer adlarını Türkçe klavyeyle arayan kişi
+ * "ß" ya da "ö" yazamaz; eşleşme kurulamazsa kutu çalışmıyor sanılır ve elli
+ * küsur satır elle taranmaya geri dönülür.
+ */
+describe("arama için sadeleştirme", () => {
+  it("büyük/küçük harf ayırmaz", () => {
+    expect(foldForSearch("Irlbach")).toBe(foldForSearch("irlbach"));
+  });
+
+  it("ß yerine ss yazılabilir", () => {
+    expect(foldForSearch("Straßkirchen")).toContain("strasskirchen");
+    expect(foldForSearch("Straßkirchen").includes(foldForSearch("strassk"))).toBe(true);
+  });
+
+  it("noktalı harfler taşıyıcı harfe iner", () => {
+    expect(foldForSearch("Röhrnbach")).toBe("rohrnbach");
+    expect(foldForSearch("Künzing")).toBe("kunzing");
+  });
+
+  it("baştaki ve sondaki boşluğu atar", () => {
+    expect(foldForSearch("  94342 ")).toBe("94342");
+  });
+
+  it("dizindeki her belediye kendi sadeleştirilmiş adıyla bulunur", () => {
+    for (const name of knownCityNames()) {
+      expect(foldForSearch(name).includes(foldForSearch(name.slice(0, 3)))).toBe(true);
+    }
+  });
+});
+
+/**
+ * Arama kutusunun kendisi. Panelde elli küsur posta kodu var; kutu sessizce
+ * boş dönerse işletmeci "böyle bir bölge yok" sanıp aynı kodu ikinci kez
+ * eklemeye kalkar.
+ */
+describe("bölge araması", () => {
+  const row = (postalCode: string, city: string) => ({ postalCode, city });
+
+  it("posta kodunun parçasıyla bulur", () => {
+    expect(matchesZoneSearch(row("94342", "Irlbach"), foldForSearch("943"))).toBe(true);
+    expect(matchesZoneSearch(row("94342", "Irlbach"), foldForSearch("94342"))).toBe(true);
+  });
+
+  it("şehir adının parçasıyla bulur, büyük/küçük harf ayırmaz", () => {
+    expect(matchesZoneSearch(row("94342", "Irlbach"), foldForSearch("irl"))).toBe(true);
+    expect(matchesZoneSearch(row("94342", "Irlbach"), foldForSearch("BACH"))).toBe(true);
+  });
+
+  it("ß ve noktalı harfler düz yazılabilir", () => {
+    expect(matchesZoneSearch(row("94342", "Straßkirchen"), foldForSearch("strassk"))).toBe(true);
+    expect(matchesZoneSearch(row("94342", "Straßkirchen"), foldForSearch("Straßk"))).toBe(true);
+    expect(matchesZoneSearch(row("94339", "Röhrnbach"), foldForSearch("rohrn"))).toBe(true);
+  });
+
+  it("eşleşmeyeni göstermez", () => {
+    expect(matchesZoneSearch(row("94342", "Irlbach"), foldForSearch("münchen"))).toBe(false);
+    expect(matchesZoneSearch(row("94342", "Irlbach"), foldForSearch("10115"))).toBe(false);
+  });
+
+  it("boş kutu her satırı gösterir — arama yokken liste eksilmez", () => {
+    expect(matchesZoneSearch(row("94342", "Irlbach"), foldForSearch("   "))).toBe(true);
+    expect(matchesZoneSearch(row("94342", "Irlbach"), "")).toBe(true);
+  });
+
+  it("kodla ad arasındaki boşluk sahte eşleşme üretmez", () => {
+    // "Irlbach" ve "94342" tek bir metinde taranıyor; aradaki boşluğu kapsayan
+    // bir arama satırı bulursa kutu anlamsız sonuçlar gösterirdi.
+    expect(matchesZoneSearch(row("94342", "Irlbach"), foldForSearch("2 irl"))).toBe(false);
+  });
+
+  it("panelde gerçekten aranacak adları bulur", () => {
+    // Dizin yeniden üretildiğinde adlar değişebilir; arama o adların
+    // üstünde çalışmalı.
+    for (const name of knownCityNames().slice(0, 10)) {
+      expect(matchesZoneSearch(row("00000", name), foldForSearch(name))).toBe(true);
+    }
   });
 });

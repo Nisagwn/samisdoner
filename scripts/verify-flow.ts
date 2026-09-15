@@ -97,6 +97,10 @@ async function main() {
     subtotalCents: quote.subtotalCents,
     serviceFeeCents: quote.serviceFeeCents,
     deliveryFeeCents: deliveryFee,
+    discountCents: 0,
+    couponCode: "",
+    tipCents: 0,
+    paymentMethod: "ONLINE",
     fulfillment: "DELIVERY",
     lang: "de",
     customerName: "Akış Testi",
@@ -141,6 +145,10 @@ async function main() {
       })),
       feeCents: quote.serviceFeeCents + deliveryFee,
       feeLabel: "Liefer- und Servicegebühr",
+      tipCents: 0,
+      tipLabel: "Trinkgeld",
+      discountCents: 0,
+      discountLabel: "Gutschein",
       totalCents: order.totalCents,
       email,
       lang: "de",
@@ -236,7 +244,25 @@ async function main() {
   await transitionOrder(order.id, "OUT_FOR_DELIVERY", "admin");
   const delivered = await transitionOrder(order.id, "DELIVERED", "admin");
   check("teslim edildi", delivered.status === "DELIVERED");
-  check("her geçiş geçmişe yazıldı", delivered.events.length === 6, `${delivered.events.length} olay`);
+  /*
+   * Beklenen kayıt: sipariş açılışı + ödeme + gecikme bildirimi + dört durum
+   * geçişi. Gecikme bir durum geçişi değil ama geçmişe yazılır (müşteri takip
+   * sayfasında "teslimat 10 dk ötelendi" satırını görür), bu yüzden sayıya
+   * dahildir.
+   */
+  const EXPECTED_EVENTS = 7;
+  check(
+    "her geçiş geçmişe yazıldı",
+    delivered.events.length === EXPECTED_EVENTS,
+    `${delivered.events.length} olay: ` +
+      delivered.events
+        .map((e) => {
+          const meta = (e.meta ?? {}) as Record<string, unknown>;
+          if (typeof meta.delayMinutes === "number") return `gecikme(+${meta.delayMinutes})`;
+          return `${e.from ?? "-"}→${e.to}`;
+        })
+        .join(", ")
+  );
 
   let rejected = false;
   try {

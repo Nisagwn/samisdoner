@@ -81,6 +81,19 @@ model Product {
   featured   Boolean @default(false)
   sortOrder  Int     @default(0)
 
+  /// Menüdeki rozetler.
+  ///
+  /// Hepsi **işletmecinin beyanı**, hesaplanmış bir değer değil: "beliebt"
+  /// sipariş sayısından türetilmez (yeni açılan bir dükkânda o sayı sıfırdır
+  /// ve rozet hiç çıkmaz), panelden işaretlenir. Rozetin işi müşterinin altmış
+  /// satırlık listede nereye bakacağını bilmesi.
+  isPopular Boolean @default(false)
+  isNew     Boolean @default(false)
+  diet      Diet    @default(NONE)
+  /// Acılık: 0 = işaret yok, 1–3 arası biber sayısı. Serbest metin değil,
+  /// çünkü menüde karşılaştırılabilir olmalı.
+  spicyLevel Int    @default(0)
+
   /// KDV oranı — **sabit değil, ürün başına**. Steueränderungsgesetz 2025
   /// (§ 12 Abs. 2 Nr. 15 UStG) ile 01.01.2026'dan itibaren: tüm yemekler %7
   /// (yerinde/paket/teslimat ayrımı kalktı), tüm içecekler %19. İstisna:
@@ -103,9 +116,10 @@ model Product {
   /// İstisna DAR yorumlanır: kapalı şişe içecek bozulmaz, kapsam dışıdır.
   isPerishable Boolean @default(true)
 
-  variants  Variant[]
-  lines     OrderLine[]
-  favorites Favorite[]
+  variants     Variant[]
+  optionGroups OptionGroup[]
+  lines        OrderLine[]
+  favorites    Favorite[]
 
   @@index([categoryId, sortOrder])
 }
@@ -124,8 +138,71 @@ model Variant {
 }
 
 /**
- * ─────────────────────────────────────── döner yapılandırıcı (KULLANIM DIŞI)
+ * ───────────────────────────────────────────── ürün seçenekleri (kullanımda)
  *
+ * "Et türü", "Soßen", "Extras" — müşterinin ürün penceresinde yaptığı seçimler.
+ *
+ * NEDEN AŞAĞIDAKİ `BuilderGroup` YENİDEN CANLANDIRILMADI
+ *
+ * O iki tablo **ürüne bağlı değil**: `BuilderGroup` global bir listedir, çünkü
+ * kaldırılan "Kendin Seç" bölümünde tek bir döner kuruluyordu ve gruplar o tek
+ * ürünün adımlarıydı. Buraya `productId` eklemek, tabloda duran mevcut
+ * satırların hangi ürüne ait olduğu sorusunu cevapsız bırakırdı (hepsi mi?
+ * hiçbiri mi?) ve "veri duruyor, bölüm geri gelirse göç gerekmez" notunu
+ * geçersiz kılardı. Ayrıca `BuilderOption` yapılandırıcıya özgü alanlar taşıyor
+ * (kcal, image) ve seçim sayısı kuralı (min/max) hiç yok.
+ *
+ * Bu yüzden ürün başına yeni bir model kuruldu; `BuilderGroup`/`BuilderOption`
+ * olduğu gibi, kullanım dışı olarak duruyor.
+ */
+
+model OptionGroup {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// Grup başlığı ("Fleisch", "Soßen"). Türkçesi boşsa Almancası kullanılır.
+  name   String
+  nameTr String @default("")
+
+  /// En az kaç seçenek işaretlenmeli. 0 = grup isteğe bağlı.
+  /// > 0 ise seçim yapılmadan sipariş satırı oluşturulamaz: et türü seçilmemiş
+  /// bir döneri mutfak hazırlayamaz, bu yüzden kural sunucuda da uygulanır.
+  minSelect Int @default(0)
+  /// En fazla kaç seçenek. 1 = tek seçim (radyo), >1 = çoklu (onay kutusu).
+  /// Ayrı bir "mod" sütunu yok; olsaydı iki alan birbiriyle çelişebilirdi.
+  maxSelect Int @default(1)
+
+  sortOrder Int @default(0)
+
+  choices OptionChoice[]
+
+  @@index([productId, sortOrder])
+}
+
+model OptionChoice {
+  id      String      @id @default(cuid())
+  groupId String
+  group   OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  name   String
+  nameTr String @default("")
+
+  /// Taban fiyata eklenen **ek ücret** (cent). 0 = dahil.
+  /// Adetle çarpılmaz, birim fiyata eklenir: (taban + ek) × adet.
+  priceCents Int @default(0)
+
+  /// Pencere açıldığında önden işaretli gelsin mi. Ücretli bir seçeneği
+  /// varsayılan yapmak sessizce para eklemek olur; panel bunu uyarır.
+  isDefault Boolean @default(false)
+
+  sortOrder Int @default(0)
+
+  @@index([groupId, sortOrder])
+}
+
+/**
+ * ─────────────────────────────────────── döner yapılandırıcı (KULLANIM DIŞI)
  * "Kendin Seç" bölümü siteden ve panelden kaldırıldı: müşteri dönerini
  * malzeme malzeme kurmak yerine menüden sipariş ediyor. Aşağıdaki iki tablo
  * ve `BuilderMode` enum'u **silinmedi** — girilmiş seçenek/ek ücret verisi
@@ -271,18 +348,39 @@ model Order {
   promisedAt DateTime?
 
   subtotalCents    Int
-  deliveryFeeCents Int @default(0)
-  serviceFeeCents  Int @default(0)
+  deliveryFeeCents Int    @default(0)
+  serviceFeeCents  Int    @default(0)
+  /// Kampanya indirimlerinin toplamı (pozitif cent). Toplamdan DÜŞÜLÜR ve KDV
+  /// matrahını da düşürür — indirim, satılan yemeğin bedelini azaltır.
+  discountCents    Int    @default(0)
+  /// Müşterinin girdiği kampanya kodu, sipariş anındaki hâliyle. Kampanya
+  /// sonradan silinse bile faturada hangi kodun uygulandığı okunabilmeli.
+  couponCode       String @default("")
+  /// Uygulanan kampanyaların dökümü, sipariş anında DONDURULUR:
+  /// [{ code, title, titleTr, amountCents }]. Toplamı `discountCents`'e eşittir.
+  /// Bir siparişe birden çok kampanya binebilir (ayın ürünü + menü fiyatı +
+  /// kod); takip sayfası ve e-posta her birini ayrı satırda gösterir.
+  discountLines    Json   @default("[]")
+  /// Bahşiş (pozitif cent). Toplama EKLENİR ama KDV matrahına GİRMEZ:
+  /// Abschn. 10.1 Abs. 5 UStAE uyarınca personele gönüllü verilen bahşiş
+  /// işletmenin edimi için ödenen bedelin parçası değildir. Bkz. lib/orders/tip.ts.
+  tipCents         Int    @default(0)
   totalCents       Int
 
   /// Orana göre net/KDV/brüt dökümü, sipariş anında DONDURULUR.
   /// [{ rate: 7, netCents, vatCents, grossCents }, { rate: 19, ... }]
+  /// Brüt toplamı `totalCents - tipCents` ile eşittir (bahşiş vergiye girmez).
   vatBreakdown Json
 
   paymentMethod PaymentMethod @default(ONLINE)
   paymentStatus PaymentStatus @default(PENDING)
 
   createdAt      DateTime  @default(now())
+  /// Siparişin mutfağa düştüğü an: online ödemede paranın onaylandığı,
+  /// kapıda ödemede siparişin verildiği an. İptal penceresi bu ana bakar
+  /// (bkz. lib/orders/cancelWindow.ts); `Payment.paidAt` kapıda ödemede
+  /// hiç dolmadığı için ayrı bir alan gerekiyor.
+  paidAt         DateTime?
   /// Panelde "Onayla"ya basıldığı an — sesli uyarı bundan sonra susar.
   acknowledgedAt DateTime?
   acceptedAt     DateTime?
@@ -293,9 +391,13 @@ model Order {
   /// Ödenmeyen sipariş bu saatten sonra EXPIRED'a düşer.
   expiresAt      DateTime?
 
-  lines    OrderLine[]
-  events   OrderEvent[]
-  payments Payment[]
+  lines      OrderLine[]
+  events     OrderEvent[]
+  payments   Payment[]
+  /// Siparişe binen her kampanya için bir satır. Kod girilen kampanya en
+  /// fazla bir tanedir; otomatik kampanyalar (ayın ürünü, menü fiyatı) yanına
+  /// eklenebilir.
+  redemptions CouponRedemption[]
 
   @@index([status, createdAt])
   @@index([createdAt])
@@ -409,6 +511,104 @@ model OrderCounter {
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════ kupon
+ */
+
+/// Kampanya (panelde "Kampanyalar"; eskiden yalnızca indirim kuponuydu).
+///
+/// Tablo adı `Coupon` olarak kaldı: yeniden adlandırmak, geçmiş siparişlerin
+/// bağlı olduğu tabloyu taşımak demekti ve kazandırdığı tek şey bir isimdi.
+///
+/// Dört tür var (`kind`): sepete yüzde ya da sabit indirim, bir ürüne özel
+/// fiyat ("ayın ürünü") ve ürün birleşimine özel fiyat ("menü fiyatı").
+///
+/// Kural tablosudur, para kasası değil: burada bir bakiye tutulmaz. Her sipariş
+/// kendi indirimini kuraldan **yeniden hesaplar** ve hesaplanan tutar siparişe
+/// kopyalanır (`Order.discountCents`, `Order.discountLines`). Kampanya yarın
+/// değişse ya da silinse bile dün verilen siparişin indirimi değişmez.
+///
+/// Kod **büyük harfe indirgenmiş** hâliyle saklanır: "doener10" ve "DOENER10"
+/// aynı koddur. Kodu **boş** (null) olan kampanya otomatiktir: koşulları
+/// tutan her sepete kendiliğinden uygulanır ve menüde duyurulur.
+model Coupon {
+  id   String     @id @default(cuid())
+  /// null = otomatik kampanya, kod gerekmez. Postgres'te NULL'lar benzersizlik
+  /// kısıtına takılmaz; birden çok otomatik kampanya yan yana durabilir.
+  code String?    @unique
+  kind CouponKind
+
+  /// Müşteriye görünen ad ("Monatsangebot: Dürüm"). Almancası `title`,
+  /// Türkçesi `titleTr`; biri boşsa öteki kullanılır. Otomatik kampanyada en
+  /// az biri zorunlu — menüde adı olmayan bir kampanya duyurulamaz.
+  title   String @default("")
+  titleTr String @default("")
+
+  /// Kampanyanın büyüklüğü; anlamı `kind`'a göre değişir:
+  ///  - PERCENT: yüzde (1–100)
+  ///  - FIXED: indirilen tutar (cent)
+  ///  - PRODUCT_PRICE: ürünün kampanya fiyatı (cent, adet başına)
+  ///  - BUNDLE_PRICE: birleşimin toplam fiyatı (cent, set başına)
+  /// Tek alan bilinçli: her durumda "kampanyanın sayısı" budur ve doğrulama
+  /// `kind`'a bakarak yapılır (bkz. lib/orders/coupon.ts).
+  value Int
+
+  /// Ürüne bağlı türlerde kampanyanın ürünleri:
+  /// [{ productId, variantSize?, qty }]. `variantSize` boşsa ürünün bütün
+  /// boyları geçerlidir; `qty` yalnızca menü fiyatında anlamlıdır (setteki
+  /// adet). Sepet indirimlerinde boş dizidir.
+  ///
+  /// İlişki tablosu değil JSON: ürün silinirse kampanya kırılmasın, yalnızca o
+  /// ürünü bulamasın — sipariş hesabı bulamadığı ürünü zaten sepette görmez.
+  items Json @default("[]")
+
+  /// Kuponun geçerli olduğu asgari ara toplam. 0 = eşik yok.
+  minOrderCents    Int @default(0)
+  /// Yüzde kuponunda indirimin üst sınırı (cent). 0 = sınırsız.
+  /// Sabit tutarlı kuponda anlamsızdır ve okunmaz.
+  maxDiscountCents Int @default(0)
+
+  /// Yalnızca bu teslim biçiminde geçerli; null = ikisinde de.
+  /// "Gel-al'a %10" gibi kampanyalar kod değil, veri olsun diye.
+  fulfillment Fulfillment?
+
+  startsAt  DateTime?
+  expiresAt DateTime?
+
+  /// Toplam kullanım sınırı. 0 = sınırsız.
+  maxRedemptions Int @default(0)
+  /// Kullanım sayacı. `CouponRedemption` satırlarından sayılabilirdi ama
+  /// sipariş oluşturma sırasında tek bir koşullu UPDATE ile sınırı yarışsız
+  /// uygulayabilmek için burada da tutulur.
+  redeemedCount  Int @default(0)
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  redemptions CouponRedemption[]
+}
+
+/// Kampanyanın bir siparişte kullanılması.
+///
+/// Denetim izidir: hangi kampanya hangi siparişte kaç cent indirim yaptı. Bir
+/// siparişe birden çok kampanya binebilir, ama **aynı kampanya iki kez
+/// binemez** — kısıt veritabanında.
+model CouponRedemption {
+  id       String @id @default(cuid())
+  couponId String
+  coupon   Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  orderId  String
+  order    Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// Uygulanan indirim (cent), sipariş anındaki hâliyle.
+  amountCents Int
+  createdAt   DateTime @default(now())
+
+  @@unique([couponId, orderId])
+  @@index([couponId, createdAt])
+  @@index([orderId])
+}
+
+/**
  * ═════════════════════════════════════════════════════════════ müşteri hesabı
  */
 
@@ -456,18 +656,61 @@ model Customer {
   /// eşleşmeyen jeton reddedilir.
   tokenVersion Int @default(0)
 
+  /// Reklam e-postası izni — UWG § 7 Abs. 2 Nr. 3 uyarınca **açık rıza**
+  /// şarttır ve varsayılanı `false` olmak zorundadır. Önceden işaretli bir
+  /// kutu ya da "kayıt olmakla kabul etmiş sayılırsınız" cümlesi rıza değildir
+  /// (DSGVO Art. 4 Nr. 11: "eindeutige bestätigende Handlung").
+  marketingOptIn   Boolean   @default(false)
+  /// Rızanın **ne zaman** verildiği. DSGVO Art. 7 Abs. 1 ispat yükünü
+  /// işletmeye yükler: "izin verdi" demek yetmez, ne zaman verdiği
+  /// gösterilebilmelidir. İzin geri alınınca null'a döner.
+  marketingOptInAt DateTime?
+  /// Teslimattan sonra gelen "siparişinizi değerlendirin" e-postası.
+  /// Reklam değildir (kendi siparişine dair bir hatırlatma), bu yüzden
+  /// varsayılanı açık; yine de kapatılabilir olmalı.
+  reviewMailsOptIn Boolean   @default(true)
+
   active       Boolean   @default(true)
   createdAt    DateTime  @default(now())
   lastLoginAt  DateTime?
   /// Doldurulduysa hesap DSGVO Art. 17 uyarınca anonimleştirilmiştir.
   anonymizedAt DateTime?
 
-  orders         Order[]
-  passwordResets PasswordReset[]
-  addresses      CustomerAddress[]
-  favorites      Favorite[]
+  orders             Order[]
+  passwordResets     PasswordReset[]
+  addresses          CustomerAddress[]
+  favorites          Favorite[]
+  emailVerifications EmailVerification[]
+  reviews            Review[]
+  loyaltyRewards     LoyaltyReward[]
 
   @@index([createdAt])
+}
+
+/// E-posta doğrulama jetonu.
+///
+/// `PasswordReset` ile birebir aynı kalıp: jeton **düz saklanmaz**, yalnızca
+/// SHA-256 özeti tutulur ve bir jeton yalnızca bir kez kullanılır. Ayrı bir
+/// tablo olmasının sebebi, iki akışın ömürlerinin farklı olması — doğrulama
+/// bağlantısı bir hafta, sıfırlama bağlantısı bir saat yaşar; tek tabloda
+/// tutmak "hangi jeton neyi yapar" sorusunu uygulama katmanına taşırdı ve
+/// doğrulama jetonuyla parola değiştirilmesi bir tek `if` hatası kadar uzakta
+/// olurdu.
+model EmailVerification {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  /// Doğrulanan adres. Kullanıcı jetonu aldıktan sonra e-postasını
+  /// değiştirirse, eski adrese giden bağlantı yeni adresi doğrulamamalı.
+  email     String
+  /// Jetonun SHA-256 özeti (base64url).
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([customerId, createdAt])
 }
 
 /// Parola sıfırlama jetonu.
@@ -544,6 +787,17 @@ model Favorite {
  * ══════════════════════════════════════════════════════════════════ yönetim
  */
 
+/// Panel kullanıcısı.
+///
+/// Panele girişin uzun süre tek yolu `.env` içindeki tek bir `ADMIN_PASSWORD`
+/// idi. Bir dönerci için bu iki şeyi imkânsız kılıyordu: bir siparişi kimin
+/// iptal ettiğini söylemek ve işten ayrılan bir çalışanın erişimini kesmek.
+/// Ortak parola paylaşılır, yazılır, unutulmaz — kesilmesi ise herkesin
+/// parolasını değiştirmek demektir.
+///
+/// Tablo şemada baştan beri vardı ama hiç okunmuyordu; artık giriş buradan
+/// geçer. Ortak parola **kurtarma yolu** olarak duruyor (bkz. lib/admin/auth.ts):
+/// veritabanında hiç kullanıcı yoksa ilk girişin bir yerden yapılması gerekir.
 model AdminUser {
   id           String    @id @default(cuid())
   email        String    @unique
@@ -553,6 +807,130 @@ model AdminUser {
   active       Boolean   @default(true)
   createdAt    DateTime  @default(now())
   lastLoginAt  DateTime?
+
+  /// Bu kullanıcının açık oturumlarını topluca düşürür — müşteri tarafındaki
+  /// `Customer.tokenVersion` ile aynı mantık. Parola değişiminde, rol
+  /// değişiminde ve hesap kapatıldığında artar. Rol değişiminde artması şart:
+  /// aksi hâlde STAFF'a indirilmiş biri, elindeki jeton OWNER yazdığı için
+  /// sekiz saat daha OWNER kalırdı.
+  tokenVersion Int @default(0)
+}
+
+/**
+ * ═══════════════════════════════════════════════════ değerlendirme ve sadakat
+ */
+
+/// Müşteri değerlendirmesi.
+///
+/// Tek kural her şeyi belirliyor: **yalnızca teslim edilmiş bir siparişin
+/// sahibi yazabilir.** Site üzerinde serbest yorum kutusu yok. Sebep ticari
+/// değil hukuki: UWG § 5b Abs. 3 uyarınca tüketici değerlendirmesi yayımlayan
+/// bir işletme, bu değerlendirmelerin gerçekten üründen yararlanmış kişilerden
+/// geldiğini **temin ettiğini** ve bunu nasıl temin ettiğini açıklamak
+/// zorundadır. Sipariş bağı burada o teminatın kendisidir.
+///
+/// `orderId` bir yabancı anahtar değil, düz bir sütundur ve bu bilinçli:
+/// `Order` modeli sipariş yaşam döngüsüne ait ve bu şemada ayrı bir sorumluluk
+/// alanı; ona geri-ilişki eklemek o modeli değiştirmeyi gerektirirdi.
+/// Benzersizlik kısıtı ilişkinin sağlayacağı asıl güvenceyi (sipariş başına tek
+/// değerlendirme) zaten veriyor; siparişin varlığı yazmadan önce uygulama
+/// katmanında doğrulanır (bkz. lib/reviews/eligibility.ts).
+model Review {
+  id String @id @default(cuid())
+
+  /// Değerlendirilen sipariş. **Sipariş başına tek değerlendirme** — kısıt
+  /// veritabanında, çünkü iki sekmeden aynı anda gönderilen iki form
+  /// uygulama katmanındaki bir kontrolü yarışla geçebilir.
+  orderId String @unique
+  /// Sipariş numarası, panelde aramak için. Kopyadır: sipariş anonimleştirilse
+  /// bile değerlendirmenin hangi siparişe ait olduğu kaybolmasın.
+  orderNo String @default("")
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  /// Yemeğin puanı, 1–5. Zorunlu: değerlendirmenin sebebi bu.
+  foodRating     Int
+  /// Teslimatın puanı, 1–5. **Gel-al siparişte null** — teslimat olmayan bir
+  /// siparişte teslimat puanı sormak, ortalamayı kirleten bir zorunluluk
+  /// olurdu. Ortalamaya yalnızca dolu olanlar girer.
+  deliveryRating Int?
+
+  /// Serbest metin. Boş bırakılabilir: yıldız vermek isteyip yazmak istemeyen
+  /// müşteriyi metin zorunluluğuyla kaçırmanın anlamı yok.
+  comment String @default("")
+
+  /// Sitede görünen ad — "Ahmet K." gibi kısaltılmış hâli yazma anında
+  /// dondurulur. Müşterinin adı sonradan değişse ya da hesabı
+  /// anonimleştirilse bile yayımlanmış yorumun altındaki ad değişmemeli.
+  authorName String @default("")
+
+  /// Sipariş anındaki dil; yorumun hangi dilde yazıldığını bilmeden onu doğru
+  /// listelemek mümkün değil.
+  lang String @default("de")
+
+  /// Sitede görünüyor mu. İşletme hakaret/spam içeren bir yorumu
+  /// gizleyebilir ama **silemez**: silinebilir olsaydı "yalnızca iyi yorumlar
+  /// duruyor" şüphesi haklı olurdu. Gizlenen yorum ortalamaya da girmez ve
+  /// gizlenme sebebi kayda yazılır.
+  published    Boolean @default(true)
+  hiddenReason String  @default("")
+
+  /// İşletmenin cevabı. Kötü bir yoruma verilen iyi bir cevap, o yorumu okuyan
+  /// için yorumun kendisinden daha bilgilendiricidir.
+  reply     String    @default("")
+  repliedAt DateTime?
+  /// Cevabı yazan panel kullanıcısının e-postası. Düz metin: `AdminUser`
+  /// kaydı silinse bile cevabın kimden geldiği kayıtta kalsın.
+  repliedBy String    @default("")
+
+  createdAt DateTime @default(now())
+
+  @@index([published, createdAt])
+  @@index([customerId, createdAt])
+}
+
+/// Damga kartı ödülü.
+///
+/// Almanya'da döner dükkânının klasik "10 damga = 1 döner" kartının dijital
+/// hâli. Damgalar **sayılmaz, türetilir**: müşterinin teslim edilmiş sipariş
+/// sayısı sayılır ve daha önce ödüle çevrilmiş olanlar düşülür. Bu yüzden
+/// burada bir "damga sayacı" sütunu yok — olsaydı, iptal edilen bir siparişin
+/// damgasını geri almak ya da sayacın gerçek sipariş sayısından ayrı düşmesi
+/// gibi bir sınıf hata doğardı.
+///
+/// `throughOrderCount`, ödül verildiği andaki **kümülatif** teslim edilmiş
+/// sipariş sayısıdır. Bir sonraki ödül eşiği bunun üstüne kurulur; aynı
+/// siparişler ikinci kez ödüle dönüşemez.
+///
+/// Ödül bir indirim kodu değil, **tezgâhta gösterilen bir koddur**: siparişin
+/// toplamına otomatik indirim uygulamak ödeme akışına dokunmayı gerektirir ve
+/// bu kart zaten kasada kullanılan kâğıdın yerini alıyor. Personel kodu panele
+/// girer, ödül kullanılmış işaretlenir.
+model LoyaltyReward {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  /// Müşteriye gösterilen kod ("SD-7K4M-2QX9"). Tezgâhta okunacağı için
+  /// karıştırılabilir harfler (I/O/0/1) alfabeden çıkarılır.
+  code String @unique
+
+  /// Ödül verildiği andaki kümülatif teslim edilmiş sipariş sayısı.
+  throughOrderCount Int
+  /// Ödülün kaç damgaya karşılık geldiği — eşik sonradan değişse bile
+  /// verilmiş ödülün hikâyesi kayıtta kalsın.
+  stampsUsed        Int
+
+  issuedAt   DateTime  @default(now())
+  redeemedAt DateTime?
+  /// Ödülü kasada kullandıran panel kullanıcısının e-postası.
+  redeemedBy String    @default("")
+  /// Ödülün son kullanma tarihi. Süresiz bir ödül, işletmenin defterinde
+  /// kapanmayan bir borç olarak durur.
+  expiresAt  DateTime
+
+  @@index([customerId, issuedAt])
 }
 
 /// Giriş denemesi sayacı. Bellekte tutulursa sunucu yeniden başlayınca sıfırlanır
@@ -574,6 +952,14 @@ enum BuilderMode {
   multi
 }
 
+/// Menüdeki beslenme rozeti. LMIV kapsamında bir beyan değildir — "vegan"
+/// işareti mutfağın taahhüdüdür, alerjen bildiriminin yerine geçmez.
+enum Diet {
+  NONE
+  VEGETARIAN
+  VEGAN
+}
+
 enum LineKind {
   PRODUCT
   /// Yalnızca geçmiş siparişlerde. Yeni satır her zaman PRODUCT olur; sipariş
@@ -584,6 +970,18 @@ enum LineKind {
 enum Fulfillment {
   DELIVERY
   PICKUP
+}
+
+/// Kampanyanın indirimi nasıl hesapladığı.
+enum CouponKind {
+  /// `value` yüzdedir (1–100); ara toplamdan o oranda indirilir.
+  PERCENT
+  /// `value` cent'tir; sabit tutar indirilir.
+  FIXED
+  /// "Ayın ürünü": `items` içindeki ürün(ler)in adet fiyatı `value` olur.
+  PRODUCT_PRICE
+  /// "Menü fiyatı": `items` birlikte sepetteyse set başına `value` ödenir.
+  BUNDLE_PRICE
 }
 
 enum OrderStatus {
@@ -615,8 +1013,19 @@ enum PaymentStatus {
   EXPIRED
 }
 
+/// Panel rolleri — üç kademe, artan yetkiyle.
+///
+/// Ayrımın ölçütü "ne kadar güvenilir" değil, **hatanın bedeli**: vardiyadaki
+/// herkes sipariş alıp fiş basabilmeli (STAFF), ama yanlışlıkla değiştirilen
+/// bir teslimat ücreti ya da işten çıkmış birinin duran erişimi günlerce fark
+/// edilmeyen bir kayıptır. Bu yüzden kurulum ekranları MANAGER'a, para ve
+/// personel OWNER'a bağlı.
 enum AdminRole {
+  /// Her şey: personel yönetimi, ciro ekranı, iade.
   OWNER
+  /// Vardiya + kurulum: menü, çalışma saatleri, teslimat bölgeleri.
+  MANAGER
+  /// Yalnızca vardiya: sipariş akışı, fiş, değerlendirme cevabı.
   STAFF
 }
 

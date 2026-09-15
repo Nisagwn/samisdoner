@@ -1,21 +1,84 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "./auth";
+import { prisma } from "@/lib/db";
+import { ENV_OWNER_ID, SESSION_COOKIE, readSessionToken, type AdminSession } from "./auth";
+import { can, type AdminPermission } from "./roles";
 import { Prisma } from "@prisma/client";
 
 /**
  * Route handler'lar için ikinci savunma hattı.
  *
  * Middleware'e güvenilmez: yetki her yazma ucunda burada yeniden doğrulanır.
- * Yetkisizse hazır 401 yanıtı döner, yetkiliyse null döner.
+ * Middleware yalnızca gezinmeyi yönlendirir — matcher'daki bir yazım hatası
+ * tüm panel uçlarını açık bırakabilirdi.
  */
+
+/**
+ * Oturumdaki panel kullanıcısı, yoksa null.
+ *
+ * İmza geçerli olsa bile kayıt tekrar okunur ve üç şey kontrol edilir: hesap
+ * hâlâ var mı, aktif mi, jetonun `tokenVersion`'ı güncel mi. Sonuncusu
+ * parola/rol değişiminden sonra eski jetonların ölmesini sağlar — imza tek
+ * başına bunu bilemez, çünkü imzalandığı an geçerliydi.
+ *
+ * Ortak parolayla açılan oturumun tabloda karşılığı yoktur; o jeton
+ * doğrudan kabul edilir (bkz. lib/admin/auth.ts).
+ */
+export async function getAdminSession(): Promise<AdminSession | null> {
+  const session = await readSessionToken(cookies().get(SESSION_COOKIE)?.value);
+  if (!session) return null;
+  if (session.userId === ENV_OWNER_ID) return session;
+
+  const user = await prisma.adminUser.findUnique({
+    where: { id: session.userId },
+    select: { active: true, role: true, tokenVersion: true },
+  });
+  if (!user || !user.active) return null;
+  if (user.tokenVersion !== session.tokenVersion) return null;
+
+  // Rol jetondan değil **kayıttan** okunur: ikisi ayrıştığında doğru olan
+  // kayıttır ve jetonun yalanı sekiz saat yaşamamalı.
+  return { ...session, role: user.role };
+}
+
+/** Yetkisizse hazır 401 yanıtı döner, yetkiliyse null döner. */
 export async function requireAdmin(): Promise<NextResponse | null> {
-  const token = cookies().get(SESSION_COOKIE)?.value;
-  if (await verifySessionToken(token)) return null;
+  if (await getAdminSession()) return null;
   return NextResponse.json(
     { error: "Bu işlem için admin oturumu gerekli." },
     { status: 401 }
   );
+}
+
+/**
+ * Belirli bir izni şart koşar.
+ *
+ * Oturum varsa ama izin yoksa 401 değil **403** döner: ikisini aynı kodla
+ * karşılamak, yetkisi olmayan bir personeli giriş ekranına atar ve o kişi
+ * parolasının bozulduğunu sanır. 403, "girişin doğru ama bu senin işin değil"
+ * demenin tek doğru yolu.
+ *
+ * Dönen değer `NextResponse` değilse oturumun kendisidir; çağıran taraf
+ * `instanceof` ile iki durumu güvenle ayırır ve olayın failini (`session.userId`)
+ * kayda yazabilir.
+ */
+export async function requirePermission(
+  permission: AdminPermission
+): Promise<AdminSession | NextResponse> {
+  const session = await getAdminSession();
+  if (!session) {
+    return NextResponse.json(
+      { error: "Bu işlem için admin oturumu gerekli." },
+      { status: 401 }
+    );
+  }
+  if (!can(session.role, permission)) {
+    return NextResponse.json(
+      { error: "Bu işlem için yetkiniz yok. Yöneticinizle görüşün." },
+      { status: 403 }
+    );
+  }
+  return session;
 }
 
 export function badRequest(message: string) {

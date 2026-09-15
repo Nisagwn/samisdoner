@@ -1,3 +1,4 @@
+import { requirePanel } from "@/lib/admin/page";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Metadata } from "next";
@@ -38,6 +39,8 @@ export default async function AdminMenuPage({
 }: {
   searchParams?: { sekme?: string };
 }) {
+  await requirePanel("catalog");
+
   const [catalog, imageOptions] = await Promise.all([getCatalog(), listImages()]);
 
   const categories = catalog.categories.slice().sort((a, b) => a.sortOrder - b.sortOrder);

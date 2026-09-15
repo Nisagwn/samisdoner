@@ -15,10 +15,23 @@
  * alan kullanılır.
  */
 
+import type { OptionGroup } from "@/lib/menu/options";
+import type { DietTag } from "@/lib/admin/types";
+
 export type MenuVariant = {
   /** Porsiyon/boy etiketi: "28 CM", "0,33" gibi. */
   size: string;
   price: string;
+  /**
+   * Aynı fiyatın cent karşılığı.
+   *
+   * Metin biçim için, sayı hesap için: ürün penceresi seçenek ek ücretlerini
+   * eklerken canlı bir toplam gösteriyor ve o toplamı "7,00 €" dizesinden geri
+   * ayrıştırmak, biçimlendirmenin tersine çevrilebilir olmasına bel bağlamak
+   * demekti. Tahsil edilen tutar yine yalnızca sunucuda hesaplanır; buradaki
+   * sayı ekrandaki ön izleme içindir.
+   */
+  priceCents: number;
   /**
    * PAngV § 4 temel fiyatı: "7,58 €/l". Yalnızca hacme göre satılan boylarda
    * doludur; "28 CM" gibi bir çap etiketinde hiç bulunmaz.
@@ -52,6 +65,25 @@ export type MenuItem = {
   variants?: MenuVariant[];
   /** Tek fiyatlı üründe PAngV § 4 temel fiyatı. */
   grundpreis?: string;
+
+  /**
+   * Ürün penceresinde sorulan seçimler (et türü, sos, ekstra malzeme).
+   *
+   * Boşsa satır doğrudan sepete eklenir. Zorunlu grup varsa düğme "seç" der
+   * ve pencere açılır — seçim yapılmadan sepete satır girmez.
+   */
+  optionGroups?: OptionGroup[];
+  /** Taban fiyat (cent). Pencere canlı toplamı bunun üstüne kurar. */
+  baseCents?: number;
+
+  /* --- rozetler --- */
+  isPopular?: boolean;
+  isNew?: boolean;
+  diet?: DietTag;
+  /** 0 = işaret yok, 1–3 arası biber. */
+  spicyLevel?: number;
+  /** İndirim yüzdesi; indirim yoksa tanımsız. */
+  discountPercent?: number;
 };
 
 export type MenuSection = {

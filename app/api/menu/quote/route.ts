@@ -45,12 +45,31 @@ export async function POST(request: Request) {
   const rawZip = typeof input.zip === "string" ? input.zip.trim() : "";
   const zip = /^\d{5}$/.test(rawZip) ? rawZip : undefined;
 
+  /*
+   * Kupon, bahşiş ve ön sipariş saati isteğe bağlıdır ve hepsi **sunucuda**
+   * denetlenir: kupon kuralı okunur, bahşiş kelepçelenir, saat açılış
+   * saatlerine karşı sınanır. Sepet çekmecesi bu alanları hiç göndermiyor ve
+   * göndermemeye devam edebilir — eksik alan "yok" demektir.
+   */
+  const couponCode = typeof input.couponCode === "string" ? input.couponCode : "";
+  const tipCents = typeof input.tipCents === "number" ? input.tipCents : 0;
+
+  // Ayrıştırılamayan saat "en kısa sürede"ye düşer: teklif ekranında geçersiz
+  // bir saat yüzünden tutarları hiç göstermemek, müşteriyi boş bir özetle
+  // baş başa bırakırdı. Sipariş oluşturmada aynı değer reddedilir.
+  const rawRequestedAt = typeof input.requestedAt === "string" ? new Date(input.requestedAt) : null;
+  const requestedAt =
+    rawRequestedAt && !Number.isNaN(rawRequestedAt.getTime()) ? rawRequestedAt : null;
+
   return withDatabase(async () => {
     const quote = await buildCheckoutQuote({
       lines: parseCartLines(input.lines),
       lang: parseLang(input.lang),
       fulfillment,
       zip,
+      couponCode,
+      tipCents,
+      requestedAt,
     });
 
     return NextResponse.json(quote);

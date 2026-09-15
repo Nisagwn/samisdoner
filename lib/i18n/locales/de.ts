@@ -166,6 +166,14 @@ export const deTranslations: Translations = {
     seeMenu: "GANZE SPEISEKARTE →",
   },
   reviews: {
+    countWord: "Bewertungen",
+    deliveryScore: "Lieferung",
+    replyLabel: "Antwort von Sami´s Döner",
+    verified: "✓ Echte Bestellung",
+    trustNote:
+      "Diese Bewertungen stammen ausschließlich von Gästen, die hier tatsächlich bestellt und ihre Lieferung erhalten haben — bewertet wird direkt im Kundenkonto, eine Bestellung kann genau einmal bewertet werden. Wir löschen keine Bewertungen. Verstößt ein Text gegen geltendes Recht (z. B. Beleidigungen), blenden wir ihn mit Begründung aus; die Bewertung zählt dann auch nicht mehr in den Durchschnitt.",
+    googleNote:
+      "Bis zur ersten Bewertung über unser Bestellsystem zeigen wir hier unsere Google-Bewertungen. Sie stammen von Google und wurden nicht von uns ausgewählt.",
     rating: "4.9",
     count: "(106 Google Bewertungen)",
     subTitle: "Das sagen unsere Gäste!",
@@ -383,5 +391,207 @@ export const deTranslations: Translations = {
     menuBtn: "ZUR SPEISEKARTE",
     homeBtn: "STARTSEITE",
     callHint: "Wenn es eilig ist, nehmen wir Ihre Bestellung auch telefonisch auf:",
+  },
+
+  /**
+   * ══════════════════════════════════════════ sipariş hunisi (keşif → sepet)
+   *
+   * Ürün penceresi, menü rozetleri, kapalı bandı ve sepetin eşik/öneri
+   * kısımları. Kendi bloğunda duruyor: bu alanda çalışan metinler bir arada
+   * kalsın, dosyanın ortasındaki mevcut anahtarlarla karışmasın.
+   */
+  ordering: {
+    badges: {
+      popular: "Beliebt",
+      new: "Neu",
+      vegetarian: "Vegetarisch",
+      vegan: "Vegan",
+      spicy: "Scharf",
+      discount: "−{percent} %",
+    },
+
+    item: {
+      required: "Pflichtauswahl",
+      optional: "Optional",
+      chooseExactly: "Wähle {min}",
+      chooseUpTo: "Wähle bis zu {max}",
+      chooseMinMax: "Wähle {min}–{max}",
+      included: "inklusive",
+      selectedCount: "{count}/{max} gewählt",
+      missingRequired: "Bitte zuerst „{group}“ wählen.",
+      maxReached: "In dieser Gruppe sind höchstens {max} Auswahlen möglich.",
+      noteLabel: "Anmerkung für die Küche (optional)",
+      notePlaceholder: "Ohne Zwiebeln, extra scharf…",
+      noteHint: "Sonderwünsche sind kostenlos, aber nicht immer möglich.",
+      qtyLabel: "Menge",
+      addForTotal: "IN DEN WARENKORB · {amount}",
+      saveChanges: "ÄNDERUNGEN SPEICHERN · {amount}",
+      customize: "Anpassen",
+      choose: "AUSWÄHLEN →",
+      close: "Schließen",
+      unitPrice: "Einzelpreis",
+      priceNote: "Alle Preise inkl. MwSt. Der endgültige Betrag wird im Warenkorb berechnet.",
+    },
+
+    status: {
+      closedTitle: "Wir haben gerade geschlossen",
+      closedText:
+        "Du kannst deinen Warenkorb trotzdem füllen und bestellen, sobald wir wieder öffnen.",
+      pausedTitle: "Bestellannahme pausiert",
+      pausedText: "Wir machen kurz Pause. Bitte versuche es gleich noch einmal.",
+      opensToday: "Heute ab {time} geöffnet.",
+      opensTomorrow: "Morgen ab {time} geöffnet.",
+      opensWeekday: "{weekday} ab {time} geöffnet.",
+      opensUnknown: "Öffnungszeiten erfragst du am besten telefonisch.",
+      todayHours: "Heute: {hours}",
+      closedToday: "Heute geschlossen.",
+      openNow: "Jetzt geöffnet",
+      weekdays: [
+        "Sonntag",
+        "Montag",
+        "Dienstag",
+        "Mittwoch",
+        "Donnerstag",
+        "Freitag",
+        "Samstag",
+      ],
+    },
+
+    cart: {
+      editLine: "Ändern",
+      removed: "„{name}“ entfernt.",
+      undo: "Rückgängig",
+      minOrderTitle: "Mindestbestellwert",
+      minOrderRemaining: "Noch {amount} bis zum Mindestbestellwert",
+      minOrderReached: "Mindestbestellwert erreicht",
+      minOrderGeneric: "Mindestbestellwert ab {amount} – je nach Liefergebiet.",
+      freeDeliveryTitle: "Kostenlose Lieferung",
+      freeDeliveryRemaining: "Noch {amount} bis zur kostenlosen Lieferung",
+      freeDeliveryReached: "Lieferung kostenlos",
+      freeDeliveryGeneric: "Ab {amount} liefern wir kostenlos.",
+      suggestionsTitle: "Dazu passt",
+      suggestionsAdd: "Hinzufügen",
+      barLabel: "Warenkorb öffnen",
+      barItems: "{count} Artikel",
+      fulfillmentHint: "Liefergebühr und Mindestbestellwert hängen von der Bestellart ab.",
+      zipHint: "Die PLZ wählst du an der Kasse.",
+      campaignSavings: "Aktionsrabatt",
+    },
+
+    campaigns: {
+      title: "Aktionen",
+      lead: "Wird automatisch im Warenkorb abgezogen — ganz ohne Code.",
+      productPrice: "{products} jetzt für {price}",
+      bundle: "{items} zusammen für {price}",
+      percent: "{value} % Rabatt auf die Bestellung",
+      percentMax: "(max. {amount})",
+      fixed: "{amount} Rabatt auf die Bestellung",
+      instead: "statt {price}",
+      minOrder: "ab {amount} Bestellwert",
+      deliveryOnly: "Nur bei Lieferung",
+      pickupOnly: "Nur bei Abholung",
+      until: "Gültig bis {date}",
+      extrasNote: "Extras werden zusätzlich berechnet.",
+    },
+  },
+  /*
+   * ───────────────────────────────── ödeme akışı: zamanlama, bahşiş, kupon
+   *
+   * Ayrı blok; gerekçesi tr.ts içindeki eşinde yazılı.
+   *
+   * Bahşiş metni bilinçli olarak "unser Team" der, "wir" demez: Abschn. 10.1
+   * Abs. 5 UStAE'ye göre bahşişin KDV dışında kalması, paranın **personele**
+   * gitmesine bağlı. İşletmeye verilen bahşiş vergiye girer. Metin, hesabın
+   * yaptığı şeyi anlatmak zorunda.
+   */
+  orderFlow: {
+    /* --- Vorbestellung --- */
+    timingTitle: "Wann soll geliefert werden?",
+    timingAsap: "So schnell wie möglich",
+    timingAsapHint: "ca. {minutes} Min.",
+    timingScheduled: "Für später vorbestellen",
+    timingSlotLabel: "Wunschzeit",
+    timingSlotPlaceholder: "Uhrzeit wählen",
+    timingNoSlots: "Für heute sind keine Zeiten mehr verfügbar.",
+    timingClosedHint:
+      "Wir haben gerade geschlossen — Sie können aber für eine spätere Uhrzeit vorbestellen.",
+
+    /* --- Zahlungsart --- */
+    paymentTitle: "Wie möchten Sie bezahlen?",
+    paymentOnline: "Online bezahlen",
+    paymentOnlineHint: "PayPal, Karte, Apple Pay und Google Pay — sicher über Stripe.",
+    paymentCash: "Barzahlung bei Lieferung",
+    paymentCashHint: "Sie zahlen bei der Übergabe. Bitte halten Sie es möglichst passend bereit.",
+    paymentCashPickupHint: "Sie zahlen bei der Abholung im Laden.",
+    paymentCard: "Kartenzahlung bei Lieferung",
+    paymentCardHint: "Unser Fahrer bringt ein Kartenlesegerät mit.",
+    paymentCardPickupHint: "Sie zahlen mit Karte bei der Abholung im Laden.",
+
+    /* --- Trinkgeld --- */
+    tipTitle: "Trinkgeld für unser Team",
+    tipHint: "Ganz freiwillig — das Trinkgeld geht vollständig an unsere Mitarbeiter.",
+    tipNone: "Kein",
+    tipCustom: "Eigener Betrag",
+    tipCustomLabel: "Trinkgeld (€)",
+    tipMaxHint: "Höchstens {amount} möglich.",
+
+    /* --- Gutscheincode --- */
+    couponTitle: "Haben Sie einen Gutscheincode?",
+    couponLabel: "Gutscheincode",
+    couponPlaceholder: "z. B. DOENER10",
+    couponApply: "Einlösen",
+    couponRemove: "Entfernen",
+    couponApplied: "{code} eingelöst",
+    couponChecking: "Wird geprüft…",
+
+    /* --- Gutschein: Ablehnungsgründe --- */
+    couponUnknown: "Dieser Code ist ungültig. Bitte prüfen Sie die Eingabe.",
+    couponInactive: "Diese Aktion ist derzeit nicht aktiv.",
+    couponNotStarted: "Diese Aktion hat noch nicht begonnen.",
+    couponExpired: "Dieser Code ist abgelaufen.",
+    couponExhausted: "Dieser Code wurde bereits vollständig eingelöst.",
+    couponWrongDelivery: "Dieser Code gilt nur für Lieferbestellungen.",
+    couponWrongPickup: "Dieser Code gilt nur für Abholbestellungen.",
+    couponBelowMinimum: "Dieser Code gilt ab einem Bestellwert von {amount}.",
+    couponGone:
+      "Dieser Code wurde soeben zum letzten Mal eingelöst. Bitte entfernen Sie ihn und bestellen Sie erneut.",
+    couponNoItems: "Dieser Code gilt für Artikel, die nicht in Ihrem Warenkorb sind.",
+    campaignGone:
+      "Eine Aktion in Ihrem Warenkorb ist soeben ausgelaufen. Der Betrag wurde aktualisiert — bitte prüfen und erneut bestätigen.",
+
+    /* --- Übersicht --- */
+    summaryDiscount: "Rabatt",
+    summaryTip: "Trinkgeld",
+    summaryPreOrder: "Wunschzeit",
+
+    /* --- Fehler --- */
+    errSlotUnavailable: "Die gewählte Uhrzeit ist nicht mehr verfügbar. Bitte wählen Sie eine neue.",
+    errPaymentMethod: "Die gewählte Zahlungsart ist derzeit nicht verfügbar.",
+
+    /* --- Bestellverfolgung: Stornierung --- */
+    cancelTitle: "Bestellung stornieren",
+    cancelHint: "Solange die Küche die Bestellung noch nicht angenommen hat, können Sie stornieren.",
+    cancelUntil: "Stornierung möglich bis {time}.",
+    cancelConfirm:
+      "Sind Sie sicher? Die Bestellung wird storniert und der Betrag vollständig erstattet.",
+    cancelConfirmYes: "Ja, stornieren",
+    cancelConfirmNo: "Abbrechen",
+    cancelPending: "Wird storniert…",
+    cancelDone: "Ihre Bestellung wurde storniert.",
+    cancelTooLate:
+      "Die Küche hat Ihre Bestellung bereits angenommen — bitte rufen Sie uns kurz an.",
+    cancelFailed: "Die Bestellung konnte nicht storniert werden. Bitte rufen Sie uns an.",
+    cancelRefundFailed:
+      "Die Bestellung wurde storniert, die Erstattung konnte aber nicht abgeschlossen werden. Bitte rufen Sie uns an — der Betrag wird auf jeden Fall erstattet.",
+
+    /* --- Bestellverfolgung: Verlauf --- */
+    timelineTitle: "Bestellverlauf",
+    timelineRefunded: "Betrag erstattet",
+    timelineDelayed: "Lieferzeit um {minutes} Min. verschoben",
+    paymentDue: "Zahlung bei Übergabe",
+    paymentDueCash: "Bar bei Lieferung zu zahlen: {amount}",
+    paymentDueCard: "Mit Karte bei Lieferung zu zahlen: {amount}",
+    paymentDuePickupCash: "Bar bei Abholung zu zahlen: {amount}",
+    paymentDuePickupCard: "Mit Karte bei Abholung zu zahlen: {amount}",
   },
 };

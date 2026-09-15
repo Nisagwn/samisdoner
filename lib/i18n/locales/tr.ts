@@ -162,6 +162,14 @@ export const trTranslations = {
     seeMenu: "TÜM MENÜYÜ GÖR →",
   },
   reviews: {
+    countWord: "değerlendirme",
+    deliveryScore: "Teslimat",
+    replyLabel: "Sami´s Döner'in cevabı",
+    verified: "✓ Gerçek sipariş",
+    trustNote:
+      "Buradaki değerlendirmeler yalnızca gerçekten sipariş vermiş ve teslimatını almış müşterilerden gelir — puan hesap üzerinden verilir ve bir sipariş yalnızca bir kez değerlendirilebilir. Hiçbir yorumu silmiyoruz. Bir metin hukuka aykırıysa (ör. hakaret) sebebiyle birlikte gizleriz; o değerlendirme ortalamaya da girmez.",
+    googleNote:
+      "Kendi sipariş sistemimiz üzerinden ilk değerlendirme gelene kadar burada Google yorumlarımızı gösteriyoruz. Bu yorumlar Google'a aittir ve tarafımızca seçilmemiştir.",
     rating: "4.9",
     count: "(106 Google Yorumu)",
     subTitle: "Müşterilerimizin Yorumları",
@@ -381,5 +389,206 @@ export const trTranslations = {
     menuBtn: "MENÜYE GİT",
     homeBtn: "ANA SAYFA",
     callHint: "Acelen varsa telefonla sipariş verebilirsin:",
+  },
+
+  /**
+   * ══════════════════════════════════════════ sipariş hunisi (keşif → sepet)
+   *
+   * Ürün penceresi, menü rozetleri, kapalı bandı ve sepetin eşik/öneri
+   * kısımları. Kendi bloğunda duruyor: bu alanda çalışan metinler bir arada
+   * kalsın, dosyanın ortasındaki mevcut anahtarlarla karışmasın.
+   */
+  ordering: {
+    badges: {
+      popular: "Sevilen",
+      new: "Yeni",
+      vegetarian: "Vejetaryen",
+      vegan: "Vegan",
+      spicy: "Acı",
+      discount: "−%{percent}",
+    },
+
+    item: {
+      /** Zorunlu grup başlığının yanındaki işaret. */
+      required: "Zorunlu seçim",
+      optional: "İsteğe bağlı",
+      /** Seçim sayısı kuralı; grup başlığının altında küçük yazı. */
+      chooseExactly: "{min} seçim yap",
+      chooseUpTo: "en fazla {max} seçim",
+      chooseMinMax: "{min}–{max} arası seçim",
+      included: "dahil",
+      /** Kaç seçim yapıldığını söyleyen sayaç. */
+      selectedCount: "{count}/{max} seçildi",
+      missingRequired: "Önce „{group}“ seçmelisin.",
+      maxReached: "Bu grupta en fazla {max} seçim yapabilirsin.",
+      noteLabel: "Mutfağa not (isteğe bağlı)",
+      notePlaceholder: "Soğansız, acılı olsun…",
+      noteHint: "Özel istekler ücretsizdir ama her zaman mümkün olmayabilir.",
+      qtyLabel: "Adet",
+      /** Sepete ekleme düğmesi; canlı toplamı taşır. */
+      addForTotal: "SEPETE EKLE · {amount}",
+      saveChanges: "DEĞİŞİKLİKLERİ KAYDET · {amount}",
+      /** Menü satırındaki, pencereyi açan ikincil düğme. */
+      customize: "Özelleştir",
+      /** Zorunlu seçimi olan üründe ana düğme sepete eklemez, pencereyi açar. */
+      choose: "SEÇ VE EKLE →",
+      close: "Kapat",
+      unitPrice: "Birim fiyat",
+      /** Pencere içindeki tutarın neyi kapsadığı. */
+      priceNote: "Tüm fiyatlara KDV dahildir. Kesin tutar sepette hesaplanır.",
+    },
+
+    status: {
+      closedTitle: "Şu an kapalıyız",
+      closedText: "Sepetini şimdi doldurabilirsin; açıldığımızda siparişini gönderebilirsin.",
+      pausedTitle: "Sipariş alımı duraklatıldı",
+      pausedText: "Kısa bir ara verdik. Lütfen biraz sonra tekrar dene.",
+      opensToday: "Bugün {time} itibarıyla açılıyoruz.",
+      opensTomorrow: "Yarın {time} itibarıyla açılıyoruz.",
+      opensWeekday: "{weekday} günü {time} itibarıyla açılıyoruz.",
+      /** Çalışma saati hiç girilmemişse gösterilir. */
+      opensUnknown: "Açılış saatleri için lütfen bizi arayın.",
+      todayHours: "Bugün: {hours}",
+      closedToday: "Bugün kapalıyız.",
+      openNow: "Şu an açığız",
+      /** 0 = Pazar … 6 = Cumartesi (JS getDay ile aynı sıra). */
+      weekdays: ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"],
+    },
+
+    cart: {
+      editLine: "Değiştir",
+      removed: "„{name}“ sepetten çıkarıldı.",
+      undo: "Geri al",
+      minOrderTitle: "Minimum sepet tutarı",
+      minOrderRemaining: "Minimum tutara {amount} kaldı",
+      minOrderReached: "Minimum sepet tutarına ulaştın",
+      /** Posta kodu henüz seçilmediğinde: bölgeye göre değişebileceğini söyler. */
+      minOrderGeneric: "Minimum sepet tutarı {amount} üzerinden başlar; bölgene göre değişir.",
+      freeDeliveryTitle: "Ücretsiz teslimat",
+      freeDeliveryRemaining: "Ücretsiz teslimata {amount} kaldı",
+      freeDeliveryReached: "Teslimat ücretsiz",
+      freeDeliveryGeneric: "{amount} üzeri siparişlerde teslimat ücretsiz.",
+      suggestionsTitle: "Yanına yakışır",
+      suggestionsAdd: "Ekle",
+      /** Mobil alt çubuk. */
+      barLabel: "Sepeti aç",
+      barItems: "{count} ürün",
+      /** Teslim biçimi anahtarı sepette de var: ücretler buna göre değişiyor. */
+      fulfillmentHint: "Teslimat ücreti ve minimum tutar teslim biçimine göre değişir.",
+      zipHint: "Posta kodunu ödeme adımında seçeceksin.",
+      /** Otomatik kampanyaların sepet çekmecesindeki toplamı. */
+      campaignSavings: "Kampanya indirimi",
+    },
+
+    /** Menü sayfasındaki otomatik kampanya şeridi. */
+    campaigns: {
+      title: "Kampanyalar",
+      lead: "Sepetine kendiliğinden uygulanır — kod gerekmez.",
+      productPrice: "{products} şimdi {price}",
+      bundle: "{items} birlikte {price}",
+      percent: "Siparişte %{value} indirim",
+      percentMax: "(en fazla {amount})",
+      fixed: "Siparişte {amount} indirim",
+      instead: "yerine {price}",
+      minOrder: "{amount} üzeri siparişlerde",
+      deliveryOnly: "Yalnızca teslimatta",
+      pickupOnly: "Yalnızca gel-al'da",
+      until: "{date} tarihine kadar",
+      extrasNote: "Ekstra seçimler ayrıca ücretlendirilir.",
+    },
+  },
+  /*
+   * ───────────────────────────────── ödeme akışı: zamanlama, bahşiş, kupon
+   *
+   * Ayrı bir blok: bu anahtarlar `cart` ve `checkout` bloklarının arasına
+   * serpiştirilseydi, aynı dosyada çalışan iki kişi her seferinde aynı
+   * satırlarda çakışırdı. Blok sonda duruyor ve yalnızca ödeme adımının
+   * ekledikleri burada.
+   */
+  orderFlow: {
+    /* --- zamanlama (Vorbestellung) --- */
+    timingTitle: "Ne zaman olsun?",
+    timingAsap: "En kısa sürede",
+    timingAsapHint: "Yaklaşık {minutes} dk",
+    timingScheduled: "Sonrası için planla",
+    timingSlotLabel: "Teslim saati",
+    timingSlotPlaceholder: "Saat seç",
+    timingNoSlots: "Bugün için seçilebilir saat kalmadı.",
+    timingClosedHint: "Şu an kapalıyız, ama açık olduğumuz bir saate sipariş verebilirsiniz.",
+
+    /* --- ödeme yöntemi --- */
+    paymentTitle: "Nasıl ödemek istersiniz?",
+    paymentOnline: "Online ödeme",
+    paymentOnlineHint: "PayPal, kart, Apple Pay ve Google Pay — Stripe üzerinden güvenli.",
+    paymentCash: "Kapıda nakit",
+    paymentCashHint: "Parayı teslimatta veriyorsunuz. Lütfen mümkünse bozuk para bulundurun.",
+    paymentCashPickupHint: "Ödemeyi dükkânda, siparişi alırken yapıyorsunuz.",
+    paymentCard: "Kapıda kart",
+    paymentCardHint: "Kurye kart okuyucuyla geliyor.",
+    paymentCardPickupHint: "Kartla ödemeyi dükkânda yapıyorsunuz.",
+
+    /* --- bahşiş (Trinkgeld) --- */
+    tipTitle: "Ekibimize bahşiş",
+    tipHint: "Tamamen size kalmış — bahşişin tamamı çalışanlarımıza gider.",
+    tipNone: "Yok",
+    tipCustom: "Kendim yazayım",
+    tipCustomLabel: "Bahşiş tutarı (€)",
+    tipMaxHint: "En fazla {amount} bırakılabilir.",
+
+    /* --- kupon (Gutscheincode) --- */
+    couponTitle: "İndirim kodunuz var mı?",
+    couponLabel: "İndirim kodu",
+    couponPlaceholder: "ÖRN: DONER10",
+    couponApply: "Uygula",
+    couponRemove: "Kaldır",
+    couponApplied: "{code} uygulandı",
+    couponChecking: "Kontrol ediliyor…",
+
+    /* --- kupon ret sebepleri --- */
+    couponUnknown: "Bu kod geçerli değil. Lütfen kontrol edip tekrar deneyin.",
+    couponInactive: "Bu kampanya şu anda kapalı.",
+    couponNotStarted: "Bu kampanya henüz başlamadı.",
+    couponExpired: "Bu kodun süresi dolmuş.",
+    couponExhausted: "Bu kodun kullanım hakkı dolmuş.",
+    couponWrongDelivery: "Bu kod yalnızca teslimat siparişlerinde geçerli.",
+    couponWrongPickup: "Bu kod yalnızca gel-al siparişlerinde geçerli.",
+    couponBelowMinimum: "Bu kod {amount} ve üzeri siparişlerde geçerli.",
+    couponGone: "Bu kodun son kullanım hakkı az önce tükendi. Kodu kaldırıp tekrar deneyin.",
+    couponNoItems: "Bu kodun geçerli olduğu ürünler sepetinizde yok.",
+    campaignGone:
+      "Sepetinizdeki bir kampanya az önce sona erdi. Tutar güncellendi; lütfen kontrol edip yeniden onaylayın.",
+
+    /* --- özet satırları --- */
+    summaryDiscount: "İndirim",
+    summaryTip: "Bahşiş",
+    summaryPreOrder: "Teslim saati",
+
+    /* --- hatalar --- */
+    errSlotUnavailable: "Seçtiğiniz saat artık uygun değil. Lütfen yeni bir saat seçin.",
+    errPaymentMethod: "Seçtiğiniz ödeme yöntemi şu anda kullanılamıyor.",
+
+    /* --- takip sayfası: iptal --- */
+    cancelTitle: "Siparişi iptal et",
+    cancelHint: "Mutfak siparişi üstlenene kadar iptal edebilirsiniz.",
+    cancelUntil: "{time} saatine kadar iptal edebilirsiniz.",
+    cancelConfirm: "Emin misiniz? Sipariş iptal edilecek ve ödediğiniz tutar iade edilecek.",
+    cancelConfirmYes: "Evet, iptal et",
+    cancelConfirmNo: "Vazgeç",
+    cancelPending: "İptal ediliyor…",
+    cancelDone: "Siparişiniz iptal edildi.",
+    cancelTooLate: "Mutfak siparişi üstlendiği için buradan iptal edilemiyor. Lütfen bizi arayın.",
+    cancelFailed: "Sipariş iptal edilemedi. Lütfen bizi arayın.",
+    cancelRefundFailed:
+      "Sipariş iptal edildi ama iade işlemi tamamlanamadı. Lütfen bizi arayın — tutar mutlaka iade edilecek.",
+
+    /* --- takip sayfası: zaman çizelgesi --- */
+    timelineTitle: "Sipariş geçmişi",
+    timelineRefunded: "Tutar iade edildi",
+    timelineDelayed: "Teslim saati {minutes} dk ötelendi",
+    paymentDue: "Kapıda ödenecek",
+    paymentDueCash: "Teslimatta nakit ödenecek: {amount}",
+    paymentDueCard: "Teslimatta kartla ödenecek: {amount}",
+    paymentDuePickupCash: "Dükkânda nakit ödenecek: {amount}",
+    paymentDuePickupCard: "Dükkânda kartla ödenecek: {amount}",
   },
 };

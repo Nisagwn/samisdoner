@@ -136,3 +136,50 @@ export function knownCityNames(): string[] {
     a.localeCompare(b, "de")
   );
 }
+
+/* ──────────────────────────────────────────────────────────── panel: arama */
+
+/**
+ * Arama kutusuyla karşılaştırmadan önce metni sadeleştirir.
+ *
+ * Liste Almanca yer adlarından oluşuyor ama panelde arayan kişi Türkçe klavye
+ * kullanıyor: "Straßkirchen" ararken yazılan "strassk", "Röhrnbach" ararken
+ * yazılan "rohrn" eşleşmezse kutu çalışmıyor sanılır ve elle taranan bir
+ * listeye geri dönülür. ß → ss açılır, aksanlar (ä, ö, ü, é) taşıyıcı harfe
+ * indirilir.
+ */
+export function foldForSearch(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/ß/g, "ss")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
+
+/**
+ * Panelin arama kutusu bir bölge satırını gösterir mi.
+ *
+ * Kod ve ad birlikte taranır: işletmeci kimi zaman kodu ("94333") kimi zaman
+ * adı ("Aiterhofen") hatırlar, hangisini yazdığını kutuya önceden söylemek
+ * zorunda kalmamalı.
+ *
+ * `needle` **sadeleştirilmiş** gelir (bkz. `foldForSearch`): kutuda her tuş
+ * vuruşunda bir kez çevrilir, satır başına değil. Sadeleştirmesi unutulmuş bir
+ * çağrı "Straßkirchen" ararken hiçbir şey bulamaz; boş bir liste ise hatadan
+ * çok "böyle bir bölge yok" gibi okunur — bu yüzden ayrı bir işlev, ayrı testi
+ * olsun diye.
+ *
+ * İki alan **ayrı ayrı** taranır, birleştirilip tek metin olarak değil: "94342
+ * Irlbach" diye birleştirilen satırda "2 irl" araması kodun sonuyla adın
+ * başını yakalıyor ve kimsenin kastetmediği bir satır dönüyordu.
+ */
+export function matchesZoneSearch(
+  zone: { postalCode: string; city: string },
+  needle: string
+): boolean {
+  if (needle === "") return true;
+  return (
+    foldForSearch(zone.postalCode).includes(needle) || foldForSearch(zone.city).includes(needle)
+  );
+}

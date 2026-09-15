@@ -5,12 +5,23 @@ import type { MenuSection } from "@/data/speisekarte";
 import { toCents, toEuro } from "@/lib/money";
 import { grundpreisLabel } from "@/lib/legal/grundpreis";
 import {
+  describeSelection,
+  missingRequiredGroups,
+  normalizeNote,
+  normalizeSelection,
+  optionsKeyPart,
+  selectionSurchargeCents,
+  type OptionGroup,
+} from "@/lib/menu/options";
+import {
   CATALOG_VERSION,
+  discountPercent,
   effectivePrice,
   formatPrice,
   slugify,
   type Catalog,
   type Category,
+  type DietTag,
   type Product,
   type PublicCategory,
   type Settings,
@@ -34,12 +45,18 @@ import {
 
 /* ------------------------------------------------------------ eşleyiciler */
 
-type ProductRow = Prisma.ProductGetPayload<{ include: { variants: true } }>;
+type ProductRow = Prisma.ProductGetPayload<{
+  include: { variants: true; optionGroups: { include: { choices: true } } };
+}>;
 type CategoryRow = Prisma.CategoryGetPayload<object>;
 type SettingsRow = Prisma.SettingsGetPayload<object>;
 
 const productInclude = {
   variants: { orderBy: { sortOrder: "asc" } },
+  optionGroups: {
+    orderBy: { sortOrder: "asc" },
+    include: { choices: { orderBy: { sortOrder: "asc" } } },
+  },
 } satisfies Prisma.ProductInclude;
 
 function toProduct(row: ProductRow): Product {
@@ -62,9 +79,36 @@ function toProduct(row: ProductRow): Product {
       .slice()
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((v) => ({ size: v.size, price: toEuro(v.priceCents) })),
+    // Seçenek ek ücretleri alan modelinde de **cent** kalır, Euro'ya
+    // çevrilmez: taban fiyattan farklı olarak bunlar hiçbir zaman tek başına
+    // gösterilmiyor, hep bir toplamın parçası oluyorlar.
+    optionGroups: row.optionGroups
+      .slice()
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((g) => ({
+        id: g.id,
+        name: g.name,
+        nameTr: g.nameTr,
+        minSelect: g.minSelect,
+        maxSelect: g.maxSelect,
+        choices: g.choices
+          .slice()
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            nameTr: c.nameTr,
+            priceCents: c.priceCents,
+            isDefault: c.isDefault,
+          })),
+      })),
     sortOrder: row.sortOrder,
     vatRate: row.vatRate,
     isPerishable: row.isPerishable,
+    isPopular: row.isPopular,
+    isNew: row.isNew,
+    diet: row.diet as DietTag,
+    spicyLevel: row.spicyLevel,
   };
 }
 
@@ -177,6 +221,52 @@ export async function getPublicMenu(): Promise<PublicCategory[]> {
 }
 
 /**
+ * Katalog ürününü kartanın okuduğu satıra çevirir.
+ *
+ * Tek yerde duruyor çünkü aynı şekli üç yer istiyor: menü (`getMenuSections`),
+ * sepetteki satırın düzenlenmesi ve çapraz satış önerileri
+ * (`getMenuItemsByIds` / `getSuggestions`). Üç ayrı kopya, üçünün farklı
+ * alanları unutması demekti.
+ */
+function toMenuItem(p: Product): MenuSection["items"][number] {
+  return {
+    // Kartanın sepete ekleyebilmesi için tek gereken alan. Fiyat değil
+    // kimlik taşınır: tutarı `/api/menu/quote` hesaplar.
+    productId: p.id,
+    no: p.no || undefined,
+    name: p.name,
+    nameTr: p.nameTr || undefined,
+    desc: p.description || undefined,
+    descTr: p.descriptionTr || undefined,
+    image: p.image ?? undefined,
+    // Varyasyonlu üründe satırda tek fiyat değil, boy listesi gösterilir.
+    price: p.variants.length > 0 ? undefined : formatPrice(p.discountPrice ?? p.price),
+    oldPrice: p.variants.length > 0 || p.discountPrice === null ? undefined : formatPrice(p.price),
+    variants:
+      p.variants.length > 0
+        ? p.variants.map((v) => ({
+            size: v.size,
+            price: formatPrice(v.price),
+            priceCents: toCents(v.price),
+            grundpreis: grundpreisLabel(v.size, toCents(v.price)) ?? undefined,
+          }))
+        : undefined,
+    // Pencerede canlı toplam bu tabana kurulur; boy seçilirse varyantın kendi
+    // cent değeri geçerli olur.
+    baseCents: toCents(p.discountPrice ?? p.price),
+    optionGroups: p.optionGroups.length > 0 ? p.optionGroups : undefined,
+    isPopular: p.isPopular || undefined,
+    isNew: p.isNew || undefined,
+    diet: p.diet === "NONE" ? undefined : p.diet,
+    spicyLevel: p.spicyLevel > 0 ? p.spicyLevel : undefined,
+    discountPercent: discountPercent(p) ?? undefined,
+    // Tek fiyatlı üründe hacim bilgisi taşıyan bir etiket yoktur (boy yalnızca
+    // varyantta bulunur), dolayısıyla temel fiyat hesaplanamaz. Uydurulmuş bir
+    // litre değeri göstermektense hiç göstermemek doğrudur.
+  };
+}
+
+/**
  * Kartanın (`/speisekarte`) beklediği görünüm.
  *
  * `data/speisekarte.ts` ile aynı şekli üretir; böylece MenuGrid tarafında
@@ -190,35 +280,62 @@ export async function getMenuSections(): Promise<MenuSection[]> {
     titleTr: cat.nameTr || undefined,
     note: cat.note || undefined,
     noteTr: cat.noteTr || undefined,
-    items: cat.products.map((p) => {
-      return {
-        // Kartanın sepete ekleyebilmesi için tek gereken alan. Fiyat değil
-        // kimlik taşınır: tutarı `/api/menu/quote` hesaplar.
-        productId: p.id,
-        no: p.no || undefined,
-        name: p.name,
-        nameTr: p.nameTr || undefined,
-        desc: p.description || undefined,
-        descTr: p.descriptionTr || undefined,
-        image: p.image ?? undefined,
-        // Varyasyonlu üründe satırda tek fiyat değil, boy listesi gösterilir.
-        price: p.variants.length > 0 ? undefined : formatPrice(p.discountPrice ?? p.price),
-        oldPrice:
-          p.variants.length > 0 || p.discountPrice === null ? undefined : formatPrice(p.price),
-        variants:
-          p.variants.length > 0
-            ? p.variants.map((v) => ({
-                size: v.size,
-                price: formatPrice(v.price),
-                grundpreis: grundpreisLabel(v.size, toCents(v.price)) ?? undefined,
-              }))
-            : undefined,
-        // Tek fiyatlı üründe hacim bilgisi taşıyan bir etiket yoktur (boy
-        // yalnızca varyantta bulunur), dolayısıyla temel fiyat hesaplanamaz.
-        // Uydurulmuş bir litre değeri göstermektense hiç göstermemek doğrudur.
-      };
-    }),
+    items: cat.products.map(toMenuItem),
   }));
+}
+
+/**
+ * Tek tek ürünler — sepetteki bir satırı yeniden yapılandırmak için.
+ *
+ * Menüden düşmüş ürün listeye girmez: düzenlenemeyen bir satırı düzenletmeye
+ * çalışmak, müşteriye boş bir pencere açmak olurdu. Çağıran taraf eksik
+ * kimlikten "artık yok" sonucunu çıkarır.
+ */
+export async function getMenuItemsByIds(
+  ids: readonly string[]
+): Promise<MenuSection["items"]> {
+  const catalog = await getCatalog();
+  const wanted = new Set(ids);
+  return catalog.products.filter((p) => wanted.has(p.id) && isVisible(p)).map(toMenuItem);
+}
+
+/**
+ * Çapraz satış önerileri — "Dazu passt".
+ *
+ * Seçim kuralı bilinçli olarak basit: sepette olmayan, **ucuz** ve tek tıkla
+ * eklenebilen (zorunlu seçimi olmayan) ürünler. İçecek ve tatlı kategorileri
+ * öne alınır, çünkü bir dönerin yanına satılan şey pratikte budur.
+ *
+ * Sipariş geçmişinden öğrenen bir öneri motoru kurulmadı: yeni bir dükkânda o
+ * veri yok ve varken bile "bu ürünü alanlar şunu aldı" listesi, otuz ürünlük
+ * bir menüde rastgeleden ayırt edilemez. Basit kural en azından **öngörülebilir**
+ * ve işletmeci sırayı panelden değiştirebiliyor.
+ */
+const SUGGESTION_CATEGORY_HINTS = ["getrank", "getraenk", "drink", "icecek", "dessert", "nachtisch", "tatli"];
+
+export async function getSuggestions(
+  excludeIds: readonly string[],
+  limit = 3
+): Promise<MenuSection["items"]> {
+  const catalog = await getCatalog();
+  const excluded = new Set(excludeIds);
+
+  const candidates = catalog.products
+    .filter((p) => isVisible(p) && !excluded.has(p.id))
+    // Zorunlu seçimi olan ürün öneri olamaz: öneri şeridindeki düğme tek
+    // dokunuşla eklemeli, pencere açmamalı.
+    .filter((p) => !p.optionGroups.some((g) => g.minSelect > 0));
+
+  const slug = (id: string) => id.toLowerCase();
+  const isSide = (categoryId: string) =>
+    SUGGESTION_CATEGORY_HINTS.some((hint) => slug(categoryId).includes(hint));
+
+  const sides = candidates.filter((p) => isSide(p.categoryId));
+  const rest = candidates.filter((p) => !isSide(p.categoryId));
+
+  const byPrice = (a: Product, b: Product) => effectivePrice(a) - effectivePrice(b);
+
+  return [...sides.sort(byPrice), ...rest.sort(byPrice)].slice(0, limit).map(toMenuItem);
 }
 
 export async function getStats() {
@@ -273,8 +390,17 @@ export async function getFeaturedProducts(limit = 3): Promise<Product[]> {
  * çağrı yerleri bunları göndermiyor ve varsayılanla oluşuyor. Panel bu alanları
  * gönderdiğinde değerler olduğu gibi yazılır.
  */
-export type ProductInput = Omit<Product, "id" | "sortOrder" | "vatRate" | "isPerishable"> &
-  Partial<Pick<Product, "vatRate" | "isPerishable">>;
+type OptionalOnCreate =
+  | "vatRate"
+  | "isPerishable"
+  | "optionGroups"
+  | "isPopular"
+  | "isNew"
+  | "diet"
+  | "spicyLevel";
+
+export type ProductInput = Omit<Product, "id" | "sortOrder" | OptionalOnCreate> &
+  Partial<Pick<Product, OptionalOnCreate>>;
 
 /** Güncellemede sıra da değiştirilebilir; oluşturmada sıra otomatik verilir. */
 export type ProductPatch = Partial<ProductInput & Pick<Product, "sortOrder">>;
@@ -301,8 +427,44 @@ function productData(patch: ProductPatch) {
   if (patch.sortOrder !== undefined) data.sortOrder = patch.sortOrder;
   if (patch.vatRate !== undefined) data.vatRate = patch.vatRate;
   if (patch.isPerishable !== undefined) data.isPerishable = patch.isPerishable;
+  if (patch.isPopular !== undefined) data.isPopular = patch.isPopular;
+  if (patch.isNew !== undefined) data.isNew = patch.isNew;
+  if (patch.diet !== undefined) data.diet = patch.diet;
+  if (patch.spicyLevel !== undefined) data.spicyLevel = patch.spicyLevel;
 
   return data;
+}
+
+/**
+ * Seçenek gruplarının veritabanı yazımı.
+ *
+ * Gruplar ürünün gömülü bir listesi gibi davranır: gönderildiyse tamamı
+ * değişir, silinen grup ayakta kalmaz. Kimlikler **yeniden üretilir** — yani
+ * panelde kaydet'e basmak eski seçenek kimliklerini geçersiz kılar ve o
+ * kimlikleri taşıyan açık sepetlerdeki satırlar `unavailable` görünür.
+ *
+ * Bu bilinçli: seçeneklerin adı ya da ek ücreti değişmişken müşterinin
+ * sepetindeki eski tarifi sessizce yeni fiyata bağlamak, ekranda gördüğünden
+ * farklı bir tutar tahsil etmek olurdu. Satırın düşüp yeniden seçilmesi daha
+ * dürüst.
+ */
+function optionGroupCreateData(groups: OptionGroup[]) {
+  return groups.map((group, i) => ({
+    name: group.name,
+    nameTr: group.nameTr,
+    minSelect: group.minSelect,
+    maxSelect: group.maxSelect,
+    sortOrder: i,
+    choices: {
+      create: group.choices.map((choice, j) => ({
+        name: choice.name,
+        nameTr: choice.nameTr,
+        priceCents: choice.priceCents,
+        isDefault: choice.isDefault,
+        sortOrder: j,
+      })),
+    },
+  }));
 }
 
 /** Aynı kimlik varsa sonuna sayı ekleyerek benzersizini bulur. */
@@ -337,6 +499,10 @@ export async function createProduct(input: ProductInput & { id: string }): Promi
       sortOrder: (max._max.sortOrder ?? 0) + 1,
       vatRate: input.vatRate ?? 7,
       isPerishable: input.isPerishable ?? true,
+      isPopular: input.isPopular ?? false,
+      isNew: input.isNew ?? false,
+      diet: input.diet ?? "NONE",
+      spicyLevel: input.spicyLevel ?? 0,
       variants: {
         create: input.variants.map((v, i) => ({
           size: v.size,
@@ -344,6 +510,7 @@ export async function createProduct(input: ProductInput & { id: string }): Promi
           sortOrder: i,
         })),
       },
+      optionGroups: { create: optionGroupCreateData(input.optionGroups ?? []) },
     },
     include: productInclude,
   });
@@ -372,9 +539,20 @@ export async function updateProduct(id: string, patch: ProductPatch): Promise<Pr
         });
       }
     }
+    // Seçenek grupları da gömülü liste: gönderildiyse tamamı yenilenir.
+    // Seçenekler `onDelete: Cascade` ile grupla birlikte gider.
+    if (patch.optionGroups !== undefined) {
+      await tx.optionGroup.deleteMany({ where: { productId: id } });
+    }
+
     return tx.product.update({
       where: { id },
-      data: productData(patch),
+      data: {
+        ...productData(patch),
+        ...(patch.optionGroups === undefined
+          ? {}
+          : { optionGroups: { create: optionGroupCreateData(patch.optionGroups) } }),
+      },
       include: productInclude,
     });
   });
@@ -481,6 +659,15 @@ export type CartLineInput = {
   kind: "product";
   productId: string;
   variantSize?: string;
+  /**
+   * Seçilen seçenek kimlikleri (`OptionChoice.id`).
+   *
+   * Yalnızca kimlik gelir, ek ücret gelmez: "+2,00 €" yazan bir gövde
+   * gönderilebilseydi fiyatı istemci belirlerdi.
+   */
+  options?: string[];
+  /** Müşterinin bu satıra yazdığı not ("ohne Zwiebeln"). Fiyata etkisi yok. */
+  note?: string;
   qty: number;
 };
 
@@ -491,6 +678,12 @@ export type PricedLine = {
   label: string;
   detail: string;
   unitCents: number;
+  /**
+   * Seçenek ek ücretleri **hariç** adet fiyatı (boy fiyatı ya da indirimli
+   * fiyat). Kampanya fiyatı ("ayın ürünü", menü fiyatı) buna uygulanır; ekstra
+   * peynir kampanyada da ücretlidir. Verilmezse `unitCents` sayılır.
+   */
+  baseUnitCents?: number;
   lineCents: number;
   qty: number;
   /** Satırın KDV oranı (7 veya 19); dökümü bu belirler. */
@@ -528,8 +721,23 @@ function clampQty(qty: unknown): number {
   return Math.min(n, MAX_QTY);
 }
 
-export function productKey(productId: string, variantSize?: string): string {
-  return `product:${productId}|${variantSize ?? ""}`;
+/**
+ * Sepet satırının kimliği.
+ *
+ * Aynı ürünün farklı **yapılandırması** ayrı satırdır: ekstra peynirli döner
+ * ile sade döner tek satırda toplanamaz, mutfak ikisini ayrı hazırlar. Not da
+ * anahtarın parçası — "soğansız" yazılmış satır ayrı durmalı.
+ *
+ * İstemci (`lib/cart.tsx`) birebir aynı biçimi üretir; iki taraf ayrışırsa
+ * sunucudan gelen fiyat sepetteki satıra bağlanamaz.
+ */
+export function productKey(
+  productId: string,
+  variantSize?: string,
+  options: readonly string[] = [],
+  note = ""
+): string {
+  return `product:${productId}|${variantSize ?? ""}|${optionsKeyPart(options)}|${normalizeNote(note)}`;
 }
 
 /**
@@ -546,7 +754,9 @@ function priceProductLine(
 ): PricedLine {
   const qty = clampQty(input.qty);
   const product = catalog.products.find((p) => p.id === input.productId);
-  const key = productKey(input.productId, input.variantSize);
+  const note = normalizeNote(input.note);
+  const rawOptions = input.options ?? [];
+  const key = productKey(input.productId, input.variantSize, rawOptions, note);
 
   if (!product || !isVisible(product)) {
     return {
@@ -580,16 +790,56 @@ function priceProductLine(
     };
   }
 
-  const unitCents = toCents(variant ? variant.price : effectivePrice(product));
+  /*
+   * Seçenekler.
+   *
+   * Önce süzülür (silinmiş seçenek, üst sınırı aşan gövde), sonra ek ücret
+   * eklenir. Ek ücret **birim fiyata** girer, satır toplamına değil: iki adet
+   * ekstra peynirli döner = (taban + peynir) × 2.
+   *
+   * Zorunlu bir grup boş kaldıysa satır fiyatlanmaz. Sessizce en ucuzunu
+   * seçmek de, ek ücreti atlayıp satırı geçirmek de mutfağa "et türü yok"
+   * diyen bir fiş yollardı; bu yüzden satır `unavailable` işaretlenir ve
+   * ödeme düğmesi kilitlenir.
+   */
+  const groups = product.optionGroups;
+  const options = normalizeSelection(groups, rawOptions);
+  const missing = missingRequiredGroups(groups, options);
+
+  const baseCents = toCents(variant ? variant.price : effectivePrice(product));
+  const unitCents = baseCents + selectionSurchargeCents(groups, options);
+
   const label = lang === "tr" ? product.nameTr || product.name : product.name;
   const desc = lang === "tr" ? product.descriptionTr || product.description : product.description;
+  const chosen = describeSelection(groups, options, lang);
+
+  // Satırın tarifi: boy → seçimler → not → açıklama. Mutfak ilk üçünü okur,
+  // sonuncusu yalnızca müşterinin neyi seçtiğini hatırlaması için.
+  const detail = [variant?.size, chosen, note ? `„${note}“` : "", desc]
+    .filter(Boolean)
+    .join(" — ");
+
+  if (missing.length > 0) {
+    return {
+      key,
+      input: { ...input, qty, options, note },
+      label,
+      detail,
+      unitCents: 0,
+      lineCents: 0,
+      qty,
+      vatRate: product.vatRate,
+      unavailable: true,
+    };
+  }
 
   return {
     key,
-    input: { ...input, qty },
+    input: { ...input, qty, options, note },
     label,
-    detail: variant ? [variant.size, desc].filter(Boolean).join(" — ") : desc,
+    detail,
     unitCents,
+    baseUnitCents: baseCents,
     lineCents: unitCents * qty,
     qty,
     vatRate: product.vatRate,

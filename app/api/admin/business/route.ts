@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { badRequest, requireAdmin, storeWrite } from "@/lib/admin/guard";
+import { badRequest, requirePermission, storeWrite } from "@/lib/admin/guard";
+import { can } from "@/lib/admin/roles";
+import { validateOpeningHours } from "@/lib/admin/schedule";
 import {
+  getBusinessSettings,
   replaceOpeningHours,
   updateBusinessSettings,
   upsertClosure,
 } from "@/lib/orders/business";
+import { isOpenNow } from "@/lib/orders/availability";
 
 /**
  * İşletme ayarları: sipariş alımı, teslim biçimleri, hazırlık süresi,
@@ -65,9 +69,34 @@ const bodySchema = z.discriminatedUnion("section", [
   }),
 ]);
 
+/**
+ * İşletmenin o anki hâli.
+ *
+ * Sipariş panosundaki vardiya şeridi bunu okur. İşletme ayarları ekranı
+ * verisini sunucuda alır ve bu uca ihtiyaç duymaz; pano ise istemcide yaşıyor
+ * ve "sipariş alımı açık mı" sorusunun cevabını bir yerden almak zorunda.
+ * Cevap panoda durmalı: kapalı kalmış bir sipariş anahtarı, ancak sipariş
+ * gelmediği fark edildiğinde anlaşılan en pahalı sessiz arızadır.
+ */
+export async function GET() {
+  const denied = await requirePermission("shift");
+  if (denied instanceof NextResponse) return denied;
+
+  const [settings, openNow] = await Promise.all([getBusinessSettings(), isOpenNow()]);
+  return NextResponse.json({
+    orderingEnabled: settings.orderingEnabled,
+    deliveryEnabled: settings.deliveryEnabled,
+    pickupEnabled: settings.pickupEnabled,
+    prepMinutes: settings.prepMinutes,
+    /* Çalışma saati içinde miyiz — sipariş anahtarından ayrı bir bilgi:
+       anahtar açık ama saat dışındaysa da sipariş gelmez. */
+    openNow,
+  });
+}
+
 export async function PATCH(request: Request) {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const denied = await requirePermission("shift");
+  if (denied instanceof NextResponse) return denied;
 
   let raw: unknown;
   try {
@@ -83,6 +112,21 @@ export async function PATCH(request: Request) {
 
   const body = parsed.data;
 
+  /*
+   * İki farklı yetki, tek uç.
+   *
+   * Sipariş anahtarı ve hazırlık süresi **vardiya** ayarlarıdır: yoğunluğa
+   * cevap veren kişi mutfaktakidir ve o cevabı vermek için müdür beklemez.
+   * Çalışma saatleri ile tatil günleri ise kurulumdur — yanlış girilen bir
+   * cumartesi akşamı, kimse fark etmeden bir günlük ciroyu siler.
+   */
+  if (body.section !== "settings" && !can(denied.role, "business")) {
+    return NextResponse.json(
+      { error: "Çalışma saatlerini ve tatil günlerini değiştirme yetkiniz yok." },
+      { status: 403 }
+    );
+  }
+
   if (body.section === "settings") {
     const { section, ...patch } = body;
     void section;
@@ -92,6 +136,23 @@ export async function PATCH(request: Request) {
   }
 
   if (body.section === "hours") {
+    /*
+     * Çakışan ve sıfır uzunlukta aralıklar kaydedilmez.
+     *
+     * Şemadaki `refine` yalnızca tek bir satıra bakabiliyor (açılış ≠ kapanış);
+     * "Salı 11:00–15:00" ile "Salı 14:00–21:00" arasındaki çakışma ancak
+     * satırlar birlikte görüldüğünde anlaşılır. Bu ekrandaki hata sessizdir —
+     * kimse "bugün neden sipariş gelmedi" diye çalışma saatlerine bakmaz.
+     */
+    const problems = validateOpeningHours(
+      body.rows.map((row) => ({
+        weekday: row.weekday,
+        openMinute: row.open,
+        closeMinute: row.close,
+      }))
+    );
+    if (problems.length > 0) return badRequest(problems[0].message);
+
     const result = await storeWrite(() =>
       replaceOpeningHours(
         body.rows.map((row) => ({

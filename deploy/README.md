@@ -153,6 +153,63 @@ yazıp `app` servisini yeniden başlatın. Webhook olmadan ödeme alınır ama s
 - [ ] `BACKUP_REMOTE` dolu ve `dc logs backup` "uzak kopya tamam" diyor
 - [ ] Ertesi gün `ls backups/` bir dosya gösteriyor
 - [ ] `sh deploy/restore.sh --dry-run` geçiyor (yedek gerçekten yüklenebiliyor)
+- [ ] Panel işletmeciye teslim edildi (aşağıdaki bölüm)
+
+---
+
+## 7. Paneli işletmeciye teslim etme
+
+Panele giriş **kişiye** bağlıdır: her personelin kendi e-postası ve parolası
+olur, panelde yapılan her iş (siparişi kim reddetti, parayı kim iade etti) o
+kişinin adına yazılır. Ortak bir parola dolaşımda kalmaz.
+
+`.env.prod` içindeki `ADMIN_PASSWORD` bir giriş parolası değil, **kurulum
+anahtarıdır**: yalnızca panelde hiç sahip hesabı yokken çalışır. İşletmeci
+kendi hesabını açtığı anda o yol kendiliğinden kapanır — kapatmayı kimsenin
+hatırlaması gerekmez, giriş ekranında ikinci bir yol görünmez.
+
+### Teslim adımları
+
+1. Dağıtımdan önce `.env.prod` içine rastgele bir kurulum anahtarı koyun:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+   ```
+2. Bu değeri işletmeciye **tek seferlik** verin (telefonla söylemek, kalıcı bir
+   mesajda bırakmaktan iyidir) ve `https://<alan-adı>/admin/login` adresini
+   gösterin. Ekran "İlk Kurulum" der ve tek bir parola alanı gösterir.
+3. İşletmeci anahtarı girer, doğrudan **Personel** ekranına düşer ve kendi
+   hesabını açar: e-posta, ad, parola, rol **OWNER**.
+4. Hesap açıldığı an kurulum anahtarı çalışmayı bırakır. İşletmeci çıkış yapıp
+   kendi e-postasıyla girerek bunu birlikte doğrulayın: giriş ekranında artık
+   yalnızca e-posta + parola vardır.
+5. İşletmeci personelini kendi ekler. Roller:
+
+   | Rol | Ne yapabilir |
+   |---|---|
+   | `STAFF` | Siparişleri görür, kabul/ret eder, hazırlık süresi verir |
+   | `MANAGER` | Ek olarak menü, fiyat, bölge ve çalışma saatleri |
+   | `OWNER` | Ek olarak personel yönetimi, ciro ve para iadesi |
+
+6. İşten ayrılan biri olursa hesabı **pasifleştirilir** (silinmez): açık
+   oturumları anında düşer, geçmiş kayıtlarındaki adı yerinde kalır.
+
+### Kilitlenme durumu
+
+Tek sahip hesabının parolası unutulduysa sunucuya erişebilen kişi geçici
+olarak kurulum anahtarını yeniden açar:
+
+```bash
+cd /opt/samis-doener
+echo "ADMIN_RECOVERY=1" >> .env.prod
+dc up -d app                      # yeniden başlat
+
+# ...işletmeci girip kendine yeni parola belirledikten sonra:
+sed -i '/^ADMIN_RECOVERY=/d' .env.prod
+dc up -d app
+```
+
+Bu satır açık unutulursa ortak parola kalıcı bir arka kapıya döner; iş biter
+bitmez kaldırın.
 
 ---
 

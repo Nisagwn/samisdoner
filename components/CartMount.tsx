@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import CartDrawer from "@/components/CartDrawer";
+import CartBar from "@/components/CartBar";
 
 /**
  * Sepet çekmecesinin nerede çizileceğine karar veren tek yer.
@@ -19,5 +20,18 @@ import CartDrawer from "@/components/CartDrawer";
 export default function CartMount() {
   const pathname = usePathname();
   if (pathname?.startsWith("/admin")) return null;
-  return <CartDrawer />;
+
+  /*
+   * Mobil sepet çubuğu ödeme sayfasında çizilmez: orada zaten sipariş
+   * özetinin ve ödeme düğmesinin olduğu bir sayfadasınız ve alttan çıkan
+   * ikinci bir "sepete bak" çubuğu, ödeme düğmesinin üstünü örter.
+   */
+  const onCheckout = pathname?.startsWith("/checkout") ?? false;
+
+  return (
+    <>
+      <CartDrawer />
+      {!onCheckout && <CartBar />}
+    </>
+  );
 }

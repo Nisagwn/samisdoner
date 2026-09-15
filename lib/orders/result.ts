@@ -1,4 +1,5 @@
 import type { RejectionReason } from "./availability";
+import type { CouponRejection } from "./coupon";
 
 /**
  * Sipariş oluşturmanın sonucu.
@@ -16,9 +17,23 @@ export type OrderError =
   | { code: "unavailable_items"; items: string[] }
   /** Ödeme oturumu açılamadı (sağlayıcı hatası, eksik anahtar). */
   | { code: "payment_unavailable" }
+  /** Seçilen ödeme yöntemi şu an kapalı (ör. kapıda ödeme kapatılmış). */
+  | { code: "payment_method_unavailable"; paymentMethod: "CASH" | "CARD_ON_DELIVERY" | "ONLINE" }
+  /**
+   * Kupon sipariş yazılırken elden kaçtı: müşteri kodu girdiğinde geçerliydi,
+   * son kullanım hakkı aradan geçen saniyelerde başkasına gitti.
+   */
+  | { code: "coupon_gone" }
+  /**
+   * Otomatik bir kampanya (ayın ürünü, menü fiyatı) sipariş yazılırken bitti.
+   * Müşterinin yapacağı bir şey yok; güncel tutarı görüp yeniden onaylaması
+   * gerekiyor.
+   */
+  | { code: "campaign_gone" }
   /** Aynı kaynaktan çok sayıda sipariş denemesi; `retryAfterSeconds` sonra tekrar. */
   | { code: "too_many_requests"; retryAfterSeconds: number }
-  | RejectionReason;
+  | RejectionReason
+  | CouponRejection;
 
 export type CreateOrderResult =
   | { ok: true; orderNo: string; checkoutUrl: string }

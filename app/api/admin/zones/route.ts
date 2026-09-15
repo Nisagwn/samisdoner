@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, badRequest, storeWrite } from "@/lib/admin/guard";
+import { requirePermission, badRequest, storeWrite } from "@/lib/admin/guard";
 import { parseDeliveryZoneBody } from "@/lib/admin/validate";
 import { createDeliveryZone, listDeliveryZones } from "@/lib/orders/zones";
 
@@ -15,15 +15,15 @@ export const dynamic = "force-dynamic";
  */
 
 export async function GET() {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const denied = await requirePermission("business");
+  if (denied instanceof NextResponse) return denied;
 
   return NextResponse.json(await listDeliveryZones());
 }
 
 export async function POST(request: Request) {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const denied = await requirePermission("business");
+  if (denied instanceof NextResponse) return denied;
 
   let body: unknown;
   try {

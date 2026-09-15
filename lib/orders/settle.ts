@@ -1,6 +1,6 @@
-import type { Prisma } from "@prisma/client";
+import type { PaymentMethod, Prisma } from "@prisma/client";
 import { sendNewOrderNotification, sendOrderConfirmation } from "@/lib/mail/orders";
-import { markOrderPaid, type OrderWithDetails } from "./repository";
+import { markOrderPaid, placeOnSiteOrder, type OrderWithDetails } from "./repository";
 
 /**
  * Ödemesi doğrulanmış siparişi kapatan **tek** yol.
@@ -50,4 +50,38 @@ export async function settleOrderPayment(input: {
   // E-posta gönderimi siparişi bloke etmez; hatası içeride yutulur.
   await Promise.all([sendNewOrderNotification(order), sendOrderConfirmation(order)]);
   return { order, alreadyPaid };
+}
+
+/**
+ * Kapıda ödenecek siparişi mutfağa düşüren **tek** yol.
+ *
+ * `settleOrderPayment`'ın kardeşidir ve bilinçli olarak ona benzer: siparişin
+ * ödeme tarafı farklı olabilir ama mutfak, müşteri ve e-posta tarafı birebir
+ * aynı olmalı. Ayrı bir fonksiyon olmasının tek sebebi, burada beklenecek bir
+ * tahsilat ve dolayısıyla bir `Payment` satırı olmaması.
+ *
+ * İdempotency `placeOnSiteOrder` içinde, veritabanı işlemi seviyesinde
+ * çözülür; bildirimler de bu yüzden yalnızca ilk geçişte gider.
+ */
+export async function settleOnSiteOrder(input: {
+  orderNo: string;
+  method: PaymentMethod;
+}): Promise<{ order: OrderWithDetails; alreadyPlaced: boolean }> {
+  const { order, alreadyPlaced } = await placeOnSiteOrder({
+    orderNo: input.orderNo,
+    method: input.method,
+    actor: "system:onsite",
+  });
+
+  if (alreadyPlaced) {
+    console.info(`[onsite] ${order.orderNo} zaten açılmış, bildirim atlandı.`);
+    return { order, alreadyPlaced };
+  }
+
+  console.info(
+    `[order] ${order.orderNo} kapıda ödemeli olarak alındı (${input.method}) — ${order.totalCents} cent`
+  );
+
+  await Promise.all([sendNewOrderNotification(order), sendOrderConfirmation(order)]);
+  return { order, alreadyPlaced };
 }

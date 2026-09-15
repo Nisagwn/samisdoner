@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { notFound, requireAdmin, storeWrite } from "@/lib/admin/guard";
+import { notFound, requirePermission, storeWrite } from "@/lib/admin/guard";
 import { deleteClosure } from "@/lib/orders/business";
 
 /**
@@ -16,8 +16,8 @@ export const dynamic = "force-dynamic";
 type Params = { params: { id: string } };
 
 export async function DELETE(_request: Request, { params }: Params) {
-  const denied = await requireAdmin();
-  if (denied) return denied;
+  const denied = await requirePermission("business");
+  if (denied instanceof NextResponse) return denied;
 
   const result = await storeWrite(() => deleteClosure(params.id));
   if (result instanceof NextResponse) return result;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { authenticateCustomer } from "@/lib/account/repository";
 import { loginSchema } from "@/lib/account/schema";
 import { withDatabase } from "@/lib/security/dbGuard";
+import { autoClaimGuestOrders } from "@/lib/account/claim";
 import {
   CUSTOMER_SESSION_COOKIE,
   CUSTOMER_SESSION_MAX_AGE,
@@ -65,6 +66,22 @@ export async function POST(request: Request) {
     }
 
     await clearAttempts(keys);
+
+    /*
+     * Misafirken verilmiş siparişleri her girişte bağlamayı dene.
+     *
+     * Kayıt anında da yapılıyor ama orada yakalanmayan bir durum var: hesabı
+     * altı ay önce açan müşteri, dün telefonla/misafir olarak sipariş vermiş
+     * olabilir. Giriş, o siparişin hesapta görünmesi için doğal fırsat.
+     *
+     * Ucuz bir sorgu değil ama giriş de sık bir işlem değil; hata yutulur
+     * çünkü bir eşleştirme arızası girişi düşürmemeli.
+     */
+    try {
+      await autoClaimGuestOrders(customer.id, customer.email, customer.phone);
+    } catch (error) {
+      console.error("[account] misafir siparişleri bağlanamadı", error);
+    }
 
     const response = NextResponse.json({
       ok: true,

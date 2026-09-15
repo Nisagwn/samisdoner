@@ -1,3 +1,4 @@
+import { requirePanel } from "@/lib/admin/page";
 import type { Metadata } from "next";
 import ServiceFeeCard from "@/components/admin/ServiceFeeCard";
 import ZoneManager from "@/components/admin/ZoneManager";
@@ -22,6 +23,8 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminZonesPage() {
+  await requirePanel("business");
+
   const [zones, settings] = await Promise.all([listDeliveryZones(), getSettings()]);
 
   return (

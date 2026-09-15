@@ -1,6 +1,8 @@
 import Stripe from "stripe";
 import {
+  CheckoutAmountMismatchError,
   WebhookSignatureError,
+  checkoutAmountOf,
   type CheckoutRequest,
   type CheckoutSession,
   type PaymentEvent,
@@ -23,6 +25,24 @@ import {
  * Hangi ödeme yöntemlerinin görüneceği **Stripe panelinden** yönetilir
  * (Settings → Payment methods). Bu yüzden burada `payment_method_types`
  * verilmez: yeni bir yöntem açmak için kod dağıtmak gerekmesin.
+ *
+ * AÇIK YÖNTEMLER — hesapta doğrulandı (test modu, DE hesabı)
+ *
+ *   card · paypal · klarna · link · apple_pay · google_pay
+ *
+ * Apple Pay ve Google Pay oturumun `payment_method_types` listesinde ayrı
+ * görünmez; Checkout onları `card` üzerinden, tarayıcı destekliyorsa cüzdan
+ * olarak sunar. Listede görünmemeleri kapalı oldukları anlamına gelmez.
+ *
+ * **Sofort ve giropay bilinçli olarak kapalı**: Stripe ikisini de emekliye
+ * ayırdı (giropay 2024 sonunda tamamen kapandı, Sofort'un yerini Klarna'nın
+ * banka havalesi akışı aldı). Almanya'da o ihtiyacı bugün Klarna karşılıyor ve
+ * zaten açık.
+ *
+ * DİKKAT: bu ayar **hesaba** aittir, koda değil. Canlı anahtara geçildiğinde
+ * aynı yöntemlerin canlı modda da açık olduğu Stripe panelinden doğrulanmalı;
+ * aksi hâlde ödeme ekranındaki "PayPal, Karte, Apple Pay und Google Pay"
+ * vaadi tutulmaz.
  */
 
 /**
@@ -82,7 +102,34 @@ function toLineItems(request: CheckoutRequest): Stripe.Checkout.SessionCreatePar
     });
   }
 
+  /*
+   * Bahşiş ayrı satır.
+   *
+   * Ücretle birleştirilmedi: müşteri ödeme ekranında bıraktığı bahşişi
+   * görebilmeli ve "bu para nereden çıktı" diye sormamalı. Ayrıca KDV
+   * açısından da ayrı bir kalem (bkz. lib/orders/tip.ts) — Stripe tarafında
+   * vergi hesaplanmıyor ama fişteki ayrım doğru okunuyor.
+   */
+  if (request.tipCents > 0) {
+    items.push({
+      quantity: 1,
+      price_data: {
+        currency: "eur",
+        unit_amount: request.tipCents,
+        product_data: { name: request.tipLabel },
+      },
+    });
+  }
+
   return items;
+}
+
+/** Satırların indirim öncesi toplamı — beyan edilen toplamla karşılaştırmak için. */
+function sumOf(items: Stripe.Checkout.SessionCreateParams.LineItem[]): number {
+  return items.reduce(
+    (sum, item) => sum + (item.price_data?.unit_amount ?? 0) * (item.quantity ?? 1),
+    0
+  );
 }
 
 /**
@@ -121,9 +168,55 @@ export const stripeProvider: PaymentProvider = {
   name: "stripe",
 
   async createCheckout(request: CheckoutRequest): Promise<CheckoutSession> {
+    const items = toLineItems(request);
+
+    /*
+     * Tahsil edilecek tutar, sunucunun hesapladığı tutarla birebir aynı mı.
+     *
+     * Bu kontrol bir paranoya değil: satırlar bu dosyada kuruluyor, toplam
+     * `composeTotals` içinde hesaplanıyor. İkisinin arasına bir gün yeni bir
+     * kalem (ambalaj ücreti, kampanya) girer ve yalnız birine eklenirse,
+     * müşteriden ekranda yazandan başka bir tutar çekilir ve fark ancak
+     * muhasebede görülür. Burada durmak, orada bulmaktan ucuz.
+     */
+    const expected = checkoutAmountOf(request);
+    if (expected !== request.totalCents) {
+      throw new CheckoutAmountMismatchError(expected, request.totalCents);
+    }
+
+    /*
+     * İkinci bir kontrol: kalemlerin toplamı, kalemlerden türetilen tutarla da
+     * uyuşmalı. İlki "biz ne hesapladık" sorusunu, bu "Stripe'a ne gönderdik"
+     * sorusunu cevaplıyor — `toLineItems` bir kalemi düşürürse (ör. sıfır
+     * tutarlı satır) fark burada görünür.
+     */
+    if (sumOf(items) - request.discountCents !== expected) {
+      throw new CheckoutAmountMismatchError(sumOf(items) - request.discountCents, expected);
+    }
+
+    /*
+     * İndirim, Stripe'ın kendi indirim mekanizmasıyla uygulanır: negatif
+     * tutarlı satır kabul edilmiyor. Kupon siparişe özel ve tek kullanımlık
+     * üretilir — kataloğa kalıcı bir kupon bırakmanın anlamı yok, indirimin
+     * kuralı zaten bizim veritabanımızda.
+     */
+    let discountId: string | null = null;
+    if (request.discountCents > 0) {
+      const coupon = await stripe().coupons.create({
+        amount_off: request.discountCents,
+        currency: "eur",
+        duration: "once",
+        name: request.discountLabel,
+        max_redemptions: 1,
+        metadata: { orderNo: request.orderNo },
+      });
+      discountId = coupon.id;
+    }
+
     const session = await stripe().checkout.sessions.create({
       mode: "payment",
-      line_items: toLineItems(request),
+      line_items: items,
+      ...(discountId ? { discounts: [{ coupon: discountId }] } : {}),
       // Sipariş numarası iki yere birden yazılır: metadata webhook'ta okunur,
       // client_reference_id Stripe panelinde siparişi bulmayı kolaylaştırır.
       metadata: { orderNo: request.orderNo },
