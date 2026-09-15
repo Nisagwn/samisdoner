@@ -1,4 +1,14 @@
 {
+  // Arama burada durur, üst dizinlere çıkılmaz.
+  //
+  // Git worktree'leri depo klasörünün İÇİNDE yaşıyor (`.claude/worktrees/…`).
+  // Bu ayar olmadan ESLint, worktree'deki yapılandırmayı bulduktan sonra
+  // yukarı çıkmaya devam ediyor ve ana çalışma kopyasındaki aynı dosyayı bir
+  // kez daha yüklüyor; sonuç `Plugin "@next/next" was conflicted` hatası ve
+  // lint'in hiç çalışmaması oluyor. Depoda tek bir yapılandırma var, arama da
+  // tek seviyede kalmalı.
+  "root": true,
+
   // Next'in önerdiği taban: erişilebilirlik (jsx-a11y), React kancaları ve
   // Core Web Vitals'ı bozan kalıplar. Ayrıca bir stil kuralı eklenmedi —
   // biçimlendirme tartışması kod incelemesinden alınıp araca verilecekse
