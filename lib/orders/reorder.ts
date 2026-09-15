@@ -19,10 +19,27 @@ export function toCartDraft(options: unknown, qty = 1): CartLineDraft | null {
   const line = options as Record<string, unknown>;
 
   if (line.kind === "product" && typeof line.productId === "string") {
+    /*
+     * Seçenekler ve not da geri taşınır.
+     *
+     * Taşınmasaydı "tekrar sipariş", et türü seçilmemiş bir döner üretirdi:
+     * satır sepete girer ama sunucu onu fiyatlayamaz ve müşteri "artık mevcut
+     * değil" uyarısıyla karşılaşırdı — üstelik ürün menüde duruyorken.
+     *
+     * Seçeneklerin hâlâ geçerli olup olmadığına burada bakılmaz (panelde
+     * silinmiş olabilirler); o kararı da ürünün kendisinde olduğu gibi fiyat
+     * ucu verir. Bkz. yukarıdaki not.
+     */
+    const options = Array.isArray(line.options)
+      ? line.options.filter((id): id is string => typeof id === "string")
+      : [];
+
     return {
       kind: "product",
       productId: line.productId,
       ...(typeof line.variantSize === "string" ? { variantSize: line.variantSize } : {}),
+      ...(options.length > 0 ? { options } : {}),
+      ...(typeof line.note === "string" && line.note ? { note: line.note } : {}),
       qty,
     };
   }
