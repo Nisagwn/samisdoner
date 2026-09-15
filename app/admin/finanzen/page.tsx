@@ -9,6 +9,7 @@ import {
   stripeSearchUrl,
 } from "@/lib/orders/finance";
 import { adminCancelLabel } from "@/lib/orders/cancelReasons";
+import { getStaleProducts, getTopProducts } from "@/lib/admin/insights";
 
 /**
  * Ciro ve ödemeler.
@@ -83,7 +84,7 @@ export default async function FinancePage({
   const rangeDays = normalizeFinanceRange(searchParams?.range);
   const rangeStart = financeRangeStart(rangeDays);
 
-  const [report, recent] = await Promise.all([
+  const [report, recent, topProducts, staleProducts] = await Promise.all([
     getFinanceReport(new Date(), rangeDays),
     // Son ödemeler: Stripe'a giden köprü. Sipariş numarasıyla ödeme kimliğini
     // yan yana görmek, "şu ödemeyi iade eder misiniz" konuşmasını tek ekrana
@@ -101,6 +102,11 @@ export default async function FinancePage({
         order: { select: { orderNo: true } },
       },
     }),
+    /* Ürün kırılımı. Ciro toplamı "iyi mi gidiyor" der; bu iki liste
+       "ne alayım, neyi vitrinden indireyim" der — haftalık et ve ekmek
+       siparişinin verildiği yer burası. */
+    getTopProducts(rangeDays),
+    getStaleProducts(rangeDays),
   ]);
 
   const peak = Math.max(...report.days.map((day) => day.revenueCents), 1);
@@ -219,6 +225,75 @@ export default async function FinancePage({
         </ul>
       </section>
       )}
+
+      {/*
+        Ürün kırılımı.
+
+        Sıralama adet üzerinden — "en çok satan" bir adet sorusudur. Ciroya
+        göre sıralanmış bir liste pahalı ürünlerin eline geçer ve mutfağın
+        ihtiyacı olan "en çok hangi malzeme gidiyor" bilgisini gizler; ciro
+        yine de yanında durur, çünkü adet tek başına kârı anlatmaz.
+      */}
+      <section className="mb-10 grid gap-8 lg:grid-cols-2">
+        <div>
+          <h2 className="mb-4 font-display text-xl font-extrabold text-bone">
+            En çok satanlar
+          </h2>
+          {topProducts.length === 0 ? (
+            <p className="border border-line bg-char px-5 py-6 text-sm text-smoke">
+              Bu dönemde satış yok.
+            </p>
+          ) : (
+            <ul className="divide-y divide-line border border-line">
+              {topProducts.map((product, index) => (
+                <li
+                  key={product.label}
+                  className="flex items-center gap-4 bg-char px-5 py-3"
+                >
+                  <span className="tag w-6 shrink-0 tabular-nums text-smoke/60">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-bone">
+                    {product.label}
+                  </span>
+                  <span className="font-display text-lg font-extrabold tabular-nums text-amber">
+                    {product.qty}
+                    <span className="ml-1 text-xs font-semibold text-smoke">adet</span>
+                  </span>
+                  <span className="tag w-20 shrink-0 text-right tabular-nums text-smoke">
+                    {formatCents(product.revenueCents)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <h2 className="mb-4 font-display text-xl font-extrabold text-bone">
+            Hiç satmayanlar
+          </h2>
+          {staleProducts.length === 0 ? (
+            <p className="border border-line bg-char px-5 py-6 text-sm text-smoke">
+              Menüdeki her üründen en az bir tane satıldı.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-line border border-line">
+                {staleProducts.map((name) => (
+                  <li key={name} className="truncate bg-char px-5 py-3 text-sm text-smoke">
+                    {name}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-smoke/70">
+                {currentLabel.toLowerCase()} içinde bu ürünlerden hiç sipariş gelmedi.
+                Menüde durup yer kaplıyorlar.
+              </p>
+            </>
+          )}
+        </div>
+      </section>
 
       <div className="grid gap-8 lg:grid-cols-2">
         {/* --- KDV --- */}
