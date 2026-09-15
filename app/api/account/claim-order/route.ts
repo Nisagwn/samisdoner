@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { requireCustomer } from "@/lib/account/guard";
-import { claimGuestOrder, claimSchema } from "@/lib/account/claim";
+import { claimGuestOrder, claimSchema, claimVerifiedOrder } from "@/lib/account/claim";
+import { verifyOrderToken } from "@/lib/orders/token";
 import { withDatabase } from "@/lib/security/dbGuard";
 import { checkThrottle, clientIp, recordFailure, throttleKeys } from "@/lib/security/throttle";
 
@@ -23,6 +25,11 @@ export const dynamic = "force-dynamic";
 
 const REJECTED =
   "Wir konnten keine passende Bestellung finden. Bitte prüfen Sie Bestellnummer und Telefonnummer.";
+
+/** Takip jetonu; uzunluk sınırı imza doğrulamasında bedava CPU tüketimini keser. */
+const tokenSchema = z.object({
+  token: z.string().trim().min(10).max(300),
+});
 
 export async function POST(request: Request) {
   return withDatabase(async () => {
@@ -55,6 +62,47 @@ export async function POST(request: Request) {
     if (!result.ok) {
       await recordFailure(keys);
       return NextResponse.json({ error: REJECTED }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, orderNo: result.orderNo });
+  });
+}
+
+/**
+ * Takip bağlantısından bağlama.
+ *
+ * POST'tan farkı kanıtın kaynağı: orada müşteri sipariş numarası ve telefon
+ * yazıyor, burada elindeki **imzalı takip jetonu** kanıt. Jeton tahmin
+ * edilemez ve imzasız üretilemez (bkz. lib/orders/token.ts), yani POST'un
+ * kabul ettiği çiftten daha güçlü.
+ *
+ * Bu yüzden burada oran sınırlaması yok: denenecek bir şey yok — geçersiz bir
+ * jeton hiçbir siparişe çözülmez ve rastgele jeton üretmek HMAC'i kırmak
+ * demek.
+ */
+export async function PUT(request: Request) {
+  return withDatabase(async () => {
+    const customer = await requireCustomer();
+    if (customer instanceof NextResponse) return customer;
+
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Ungültige Anfrage." }, { status: 400 });
+    }
+
+    const parsed = tokenSchema.safeParse(raw);
+    if (!parsed.success) {
+      return NextResponse.json({ error: REJECTED }, { status: 400 });
+    }
+
+    const orderNo = await verifyOrderToken(parsed.data.token);
+    if (!orderNo) return NextResponse.json({ error: REJECTED }, { status: 404 });
+
+    const result = await claimVerifiedOrder(customer.id, orderNo);
+    if (!result.ok) {
+      return NextResponse.json({ error: REJECTED }, { status: 409 });
     }
 
     return NextResponse.json({ ok: true, orderNo: result.orderNo });

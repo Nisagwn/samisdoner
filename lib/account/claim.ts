@@ -148,3 +148,47 @@ export async function autoClaimGuestOrders(
   });
   return result.count;
 }
+
+/**
+ * Takip bağlantısıyla bağlama.
+ *
+ * Takip jetonu, sipariş numarasının HMAC ile imzalanmış hâlidir
+ * (bkz. lib/orders/token.ts) ve yalnızca siparişi veren kişiye — onay
+ * e-postasıyla ya da ödeme sonrası yönlendirmeyle — ulaşır. Yani jeton,
+ * numara + telefon çiftinden **daha güçlü** bir sahiplik kanıtı: tahmin
+ * edilemez ve imzasız üretilemez.
+ *
+ * Bu yüzden burada telefon sorulmaz. Müşteri zaten kendi siparişinin takip
+ * sayfasına bakıyor; ona "şimdi de telefon numaranı yaz" demek, elindeki
+ * kanıtı yok sayıp daha zayıfını istemek olurdu.
+ *
+ * Jetonun doğrulanması **çağıranın işidir**: bu fonksiyon doğrulanmış bir
+ * sipariş numarası bekler. Ayrım bilinçli — jeton doğrulaması sipariş
+ * alanının sorumluluğunda ve buraya kopyalanmamalı.
+ */
+export async function claimVerifiedOrder(
+  customerId: string,
+  orderNo: string
+): Promise<ClaimResult> {
+  const order = await prisma.order.findUnique({
+    where: { orderNo },
+    select: { id: true, orderNo: true, customerId: true },
+  });
+  if (!order) return { ok: false, reason: "not_found" };
+
+  if (order.customerId) {
+    return order.customerId === customerId
+      ? { ok: true, orderNo: order.orderNo }
+      : { ok: false, reason: "already_claimed" };
+  }
+
+  // `customerId: null` koşulu güncellemenin kendi `where`'inde: okuma ile
+  // yazma arasında sipariş başka bir hesaba bağlanmış olabilir.
+  const claimed = await prisma.order.updateMany({
+    where: { id: order.id, customerId: null },
+    data: { customerId },
+  });
+  if (claimed.count === 0) return { ok: false, reason: "already_claimed" };
+
+  return { ok: true, orderNo: order.orderNo };
+}
