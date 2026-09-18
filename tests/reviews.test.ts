@@ -11,6 +11,11 @@ import {
   reviewOpensAt,
   type ReviewableOrder,
 } from "@/lib/reviews/eligibility";
+import {
+  PRODUCT_REVIEW_LIMIT,
+  groupReviewsByProduct,
+  type ReviewWithOrder,
+} from "@/lib/reviews/products";
 
 /**
  * Değerlendirme uygunluğu.
@@ -200,5 +205,106 @@ describe("yayımlanan ad", () => {
     // E-posta adresi hiçbir koşulda görünmemeli.
     expect(displayName("", true)).toBe("Gast");
     expect(displayName("   ", false)).toBe("Misafir");
+  });
+});
+
+/* ────────────────────────────────── ürüne dağıtılan sipariş puanları */
+
+/**
+ * Ürün penceresindeki puan.
+ *
+ * Buradaki tek iddia şu: gösterilen sayı "bu ürünü içeren siparişlerin
+ * ortalaması"dır. Sınanan kurallar, o iddiayı yalan hâline getirebilecek üç
+ * durum — bir siparişin ortalamaya iki kez girmesi, gizlenmiş bir yorumun
+ * sayılması (veri katmanı süzüyor, burada kaynağa hiç girmiyor) ve yorumsuz
+ * bir puanın listede metinsiz bir kutu olarak görünmesi.
+ */
+
+function review(patch: Partial<ReviewWithOrder> = {}): ReviewWithOrder {
+  return {
+    id: "r1",
+    orderId: "o1",
+    authorName: "Nisa G.",
+    foodRating: 5,
+    deliveryRating: 5,
+    comment: "çok iyi",
+    reply: "",
+    createdAt: "2026-09-15T18:00:00.000Z",
+    ...patch,
+  };
+}
+
+describe("sipariş puanlarının ürünlere dağıtılması", () => {
+  it("siparişteki her ürüne siparişin puanını yazar", () => {
+    const index = groupReviewsByProduct(
+      [review({ foodRating: 4 })],
+      [
+        { orderId: "o1", productId: "doener" },
+        { orderId: "o1", productId: "ayran" },
+      ]
+    );
+
+    expect(index.doener.average).toBe(4);
+    expect(index.ayran.average).toBe(4);
+    expect(index.doener.count).toBe(1);
+  });
+
+  it("aynı ürün siparişte iki satırdaysa puanı bir kez sayar", () => {
+    // Üç dürüm söyleyen bir müşteri üç müşteri gibi sayılmamalı.
+    const index = groupReviewsByProduct(
+      [review({ foodRating: 2 })],
+      [
+        { orderId: "o1", productId: "doener" },
+        { orderId: "o1", productId: "doener" },
+      ]
+    );
+
+    expect(index.doener.count).toBe(1);
+    expect(index.doener.average).toBe(2);
+  });
+
+  it("ürüne bağlı olmayan satırı yok sayar", () => {
+    const index = groupReviewsByProduct([review()], [{ orderId: "o1", productId: null }]);
+    expect(index).toEqual({});
+  });
+
+  it("başka siparişin satırına puan yazmaz", () => {
+    const index = groupReviewsByProduct([review({ orderId: "o1" })], [
+      { orderId: "o2", productId: "doener" },
+    ]);
+    expect(index).toEqual({});
+  });
+
+  it("yorumsuz değerlendirme ortalamaya girer ama listede görünmez", () => {
+    const index = groupReviewsByProduct(
+      [
+        review({ id: "r1", orderId: "o1", foodRating: 5, comment: "" }),
+        review({ id: "r2", orderId: "o2", foodRating: 3, comment: "idare eder" }),
+      ],
+      [
+        { orderId: "o1", productId: "doener" },
+        { orderId: "o2", productId: "doener" },
+      ]
+    );
+
+    expect(index.doener.count).toBe(2);
+    expect(index.doener.average).toBe(4);
+    expect(index.doener.items.map((item) => item.id)).toEqual(["r2"]);
+  });
+
+  it("listeyi üst sınırda keser, ortalamayı kesmez", () => {
+    const many = Array.from({ length: PRODUCT_REVIEW_LIMIT + 3 }, (_, i) =>
+      review({ id: `r${i}`, orderId: `o${i}` })
+    );
+    const lines = many.map((item) => ({ orderId: item.orderId, productId: "doener" }));
+
+    const index = groupReviewsByProduct(many, lines);
+
+    expect(index.doener.items).toHaveLength(PRODUCT_REVIEW_LIMIT);
+    expect(index.doener.count).toBe(many.length);
+  });
+
+  it("hiç değerlendirme yoksa boş dizin döner", () => {
+    expect(groupReviewsByProduct([], [{ orderId: "o1", productId: "doener" }])).toEqual({});
   });
 });

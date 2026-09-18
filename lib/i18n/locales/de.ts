@@ -431,6 +431,19 @@ export const deTranslations: Translations = {
       close: "Schließen",
       unitPrice: "Einzelpreis",
       priceNote: "Alle Preise inkl. MwSt. Der endgültige Betrag wird im Warenkorb berechnet.",
+
+      /* --- Bewertungen im Produktfenster --- */
+      reviewsTitle: "Bewertungen",
+      /* Dürüstlük notu: puan siparişe verilir, ürüne değil. Bunu yazmamak,
+         olmayan bir "ürün puanı" varmış gibi göstermek olurdu. */
+      reviewsLead:
+        "Bewertet wird immer die ganze Bestellung. Hier stehen die Bewertungen der Bestellungen, in denen dieses Gericht dabei war.",
+      reviewsAverage: "{average} von 5",
+      reviewsCount: "{count} Bewertungen",
+      reviewsNone: "Für dieses Gericht gibt es noch keine Bewertung.",
+      reviewsLoading: "Bewertungen werden geladen…",
+      reviewsFailed: "Bewertungen konnten nicht geladen werden.",
+      reviewsReplyLabel: "Antwort von Sami´s Döner",
     },
 
     status: {

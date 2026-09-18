@@ -211,6 +211,34 @@ export default function ReviewManager({ initial }: { initial: AdminReview[] }) {
                   {review.authorName} · {review.lang === "tr" ? "Türkçe" : "Almanca"}
                 </p>
 
+                {/* Puanlanan sipariş.
+                    "Üç yıldız" tek başına cevaplanabilir bir bilgi değil;
+                    "neye üç yıldız" cevaplanabilir. Sipariş numarasından yola
+                    çıkıp ayrı bir ekranda siparişi bulmak, gün içinde onlarca
+                    yorumu gözden geçiren biri için yapılmayacak kadar uzun. */}
+                {review.items.length > 0 && (
+                  <div className="mt-3">
+                    <p className="tag mb-1.5 text-smoke/70">Puanlanan sipariş</p>
+                    <ul className="flex flex-wrap gap-1.5">
+                      {review.items.map((item, index) => (
+                        <li
+                          key={`${item.productId ?? item.label}-${index}`}
+                          className="border border-line bg-void px-2.5 py-1 text-xs text-bone"
+                        >
+                          <span className="font-mono tabular-nums text-smoke">{item.qty}×</span>{" "}
+                          {item.label}
+                        </li>
+                      ))}
+                    </ul>
+                    {/* Puan siparişin tamamına verilir; bir satırın puanı
+                        değildir. Panelde bunu yazmamak, "hangi ürün kötü"
+                        diye yanlış bir sonuca götürür. */}
+                    <p className="mt-1.5 text-[11px] text-smoke/60">
+                      Puan siparişin tamamına verildi, tek tek ürünlere değil.
+                    </p>
+                  </div>
+                )}
+
                 {review.comment ? (
                   <p className="mt-3 border-l-2 border-line pl-4 text-sm leading-relaxed text-bone">
                     {review.comment}

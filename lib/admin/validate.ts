@@ -1,5 +1,6 @@
 import type { ProductPatch } from "./store";
 import { DIET_TAGS, MAX_SPICY_LEVEL, VAT_RATES, type DietTag, type Variant } from "./types";
+import { isImagePath } from "./imagePath";
 import type { OptionGroup } from "@/lib/menu/options";
 import type { DeliveryZoneInput } from "@/lib/orders/zones";
 import { toCents } from "@/lib/money";
@@ -192,15 +193,14 @@ function asSpicyLevel(value: unknown): Result<number> {
   return asCount(value === "" || value === undefined ? 0 : value, "Acılık", 0, MAX_SPICY_LEVEL);
 }
 
-/** Görsel: yalnızca proje içi yol (/assets/...) kabul edilir. */
+/** Görsel: yalnızca hazır görseller (/assets/...) ya da panelden yüklenenler (/uploads/...). */
 function asImage(value: unknown): Result<string | null> {
   if (value === undefined || value === null || value === "") return { ok: true, value: null };
   if (typeof value !== "string") return { ok: false, error: "Görsel yolu metin olmalı." };
   const trimmed = value.trim();
-  if (!trimmed.startsWith("/")) {
-    return { ok: false, error: "Görsel yolu / ile başlayan proje içi bir yol olmalı (ör. /assets/menu-klasik.webp)." };
+  if (!isImagePath(trimmed)) {
+    return { ok: false, error: "Görsel yolu geçersiz. Listeden seçin ya da yeni görsel yükleyin." };
   }
-  if (trimmed.includes("..")) return { ok: false, error: "Görsel yolu geçersiz." };
   return { ok: true, value: trimmed };
 }
 

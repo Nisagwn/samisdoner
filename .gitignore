@@ -20,6 +20,11 @@ data/store/*.tmp
 # veritabani yedekleri sunucuda durur, repoda degil
 backups/
 
+# panelden yuklenen urun gorselleri (canlida Docker biriminde durur).
+# Basindaki / sart: yoksa app/uploads ve app/api/admin/uploads rotalari da
+# yok sayilir.
+/uploads/
+
 # rclone yapilandirmasi ve SSH anahtari (uzak yedek hedefi)
 deploy/backup-secrets/
 

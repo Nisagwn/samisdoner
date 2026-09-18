@@ -436,6 +436,16 @@ export const trTranslations = {
       unitPrice: "Birim fiyat",
       /** Pencere içindeki tutarın neyi kapsadığı. */
       priceNote: "Tüm fiyatlara KDV dahildir. Kesin tutar sepette hesaplanır.",
+
+      reviewsTitle: "Değerlendirmeler",
+      reviewsLead:
+        "Puan her zaman siparişin tamamına verilir. Burada bu ürünün bulunduğu siparişlerin değerlendirmeleri var.",
+      reviewsAverage: "5 üzerinden {average}",
+      reviewsCount: "{count} değerlendirme",
+      reviewsNone: "Bu ürün için henüz değerlendirme yok.",
+      reviewsLoading: "Değerlendirmeler yükleniyor…",
+      reviewsFailed: "Değerlendirmeler yüklenemedi.",
+      reviewsReplyLabel: "Sami´s Döner'in cevabı",
     },
 
     status: {

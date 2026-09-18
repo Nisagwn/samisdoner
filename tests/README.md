@@ -63,18 +63,29 @@ stripe listen --forward-to localhost:3000/api/webhooks/stripe
 4. **"Görüldü"**ye bas → ses susmalı, sipariş listede kalmalı.
 5. Kabul et → Hazırlanıyor → Yola çıktı → Teslim edildi.
 6. Müşteri takip sayfası (açık bırak) 20 saniye içinde kendiliğinden güncellenmeli.
+7. `/admin/bewertungen` → her yorumun altında **"Puanlanan sipariş"** ve ürünleri
+   görünmeli. Cevap yaz ya da yorumu gizle → satır tazelendikten sonra ürünler
+   **hâlâ durmalı** (yazma uçları listeyle aynı şekli döndürmeli).
 
 ### 5. Üyelik
 
 1. `/konto/registrieren` → hesap aç. Kayıttan sonra doğrudan `/konto` açılmalı.
 2. Adres alanlarını doldur, kaydet.
 3. Sepete ürün ekle → adres formu **kayıtlı bilgilerle dolu** gelmeli.
-4. Alanlardan birini elle değiştir, çekmeceyi kapat/aç → **değişiklik korunmalı**
+4. `/konto/adressen` → ikinci bir adres kaydet → `/checkout` (teslimat seçili) →
+   "Teslimat adresi" başlığının altında **kayıtlı adresler şeridi** çıkmalı, bir
+   adrese dokununca form dolmalı. Şerit ön doldurmayla aynı isteğe bağlıdır:
+   geliştirme kipinde StrictMode efekti iki kez kurduğu için bir kez bu istek
+   iptal edilip hiç yenilenmemişti, yani **bu adım tarayıcıda görülmeden
+   doğrulanmış sayılmaz** (birim testler istemci efektlerine bakmıyor).
+5. Alanlardan birini elle değiştir, çekmeceyi kapat/aç → **değişiklik korunmalı**
    (ön doldurma üzerine yazmamalı).
-5. `/konto` → geçmiş siparişte "Tekrar sipariş ver" → sepet dolmalı.
-6. Parolayı değiştir → **başka bir tarayıcıdaki oturum düşmeli**, bu tarayıcı açık kalmalı.
-7. "Verilerimi indir" → JSON inmeli, içinde `passwordHash` **olmamalı**.
-8. Hesabı sil → çıkış yapmalı; `/admin/orders`'ta siparişin **hâlâ görünmeli** ama
+6. `/konto` → geçmiş siparişte "Tekrar sipariş ver" → sepet dolmalı.
+7. `/konto/bewertungen` → değerlendirme satırındaki ürün etiketine bas → menüde
+   **o ürünün penceresi açılmalı**, içinde değerlendirmeler görünmeli.
+8. Parolayı değiştir → **başka bir tarayıcıdaki oturum düşmeli**, bu tarayıcı açık kalmalı.
+9. "Verilerimi indir" → JSON inmeli, içinde `passwordHash` **olmamalı**.
+10. Hesabı sil → çıkış yapmalı; `/admin/orders`'ta siparişin **hâlâ görünmeli** ama
    müşteri adı "Gelöschtes Konto" olmalı.
 
 ### 6. Yetki denemeleri (hepsi başarısız olmalı)

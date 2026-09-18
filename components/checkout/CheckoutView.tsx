@@ -210,9 +210,27 @@ export function CheckoutView() {
    */
   useEffect(() => {
     if (prefilled.current) return;
-    prefilled.current = true;
 
     const controller = new AbortController();
+
+    /*
+     * Bayrak isteğin **sonucu geldiğinde** kalkar, başlarken değil.
+     *
+     * React geliştirme kipinde (StrictMode) her efekti bir kurar, hemen bozar
+     * ve yeniden kurar. Bayrak efektin başında kalkarsa: ilk kurulum isteği
+     * başlatır, temizlik onu iptal eder, ikinci kurulum ise bayrağı kalkmış
+     * bulup hiç istek atmaz. Sonuç, oturum açmış müşteriye bomboş bir ödeme
+     * formu ve hiç görünmeyen bir "kayıtlı adresler" şeridiydi — hesabına
+     * adres kaydetmenin anlamı kalmıyordu.
+     *
+     * İptal edilmiş istek "denendi" sayılmaz; bir sonraki kurulum yeniden
+     * dener. Gerçekten tamamlanan (ya da ağ hatasıyla biten) istekten sonra
+     * ise ikinci bir deneme yapılmaz.
+     */
+    const settled = () => {
+      if (!controller.signal.aborted) prefilled.current = true;
+    };
+
     fetch("/api/account/profile", { signal: controller.signal, cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { customer?: Record<string, string> } | null) => {
@@ -268,7 +286,8 @@ export function CheckoutView() {
       })
       .catch(() => {
         // Misafir ya da ağ hatası: form elle doldurulur, akış değişmez.
-      });
+      })
+      .finally(settled);
 
     return () => controller.abort();
   }, [setZip]);

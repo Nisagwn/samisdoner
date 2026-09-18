@@ -52,16 +52,30 @@ push_offsite() {
 	# `copy` (sync değil): uzaktaki dosyalar asla silinmez. `sync` kullansaydık
 	# sunucudaki yerel temizlik uzak arşivi de budardı — yani 14 günden eski
 	# hiçbir yedek hiçbir yerde kalmazdı.
-	if rclone copy /backups "$BACKUP_REMOTE" \
+	if ! rclone copy /backups "$BACKUP_REMOTE" \
 		--include 'doner-*.sql.gz' \
 		--retries 3 --low-level-retries 5 --timeout 5m \
 		--stats-one-line --stats 0; then
-		log "uzak kopya tamam → $BACKUP_REMOTE"
-		return 0
+		log "HATA: uzak kopya başarısız → $BACKUP_REMOTE"
+		return 1
 	fi
+	log "uzak kopya tamam → $BACKUP_REMOTE"
 
-	log "HATA: uzak kopya başarısız → $BACKUP_REMOTE"
-	return 1
+	# Panelden yüklenen ürün görselleri. Veritabanı dökümüne girmezler; her gün
+	# tamamını yeniden arşivlemek sekiz yıllık uzak arşivi boşuna şişirirdi.
+	# Adları içerik özeti olduğu için bir dosya asla değişmez: rclone yalnızca
+	# yeni yüklenenleri gönderir, bu adım çoğu gün hiçbir şey aktarmaz.
+	if [ -d /uploads ]; then
+		if ! rclone copy /uploads "$BACKUP_REMOTE/gorseller" \
+			--include '*.webp' \
+			--retries 3 --low-level-retries 5 --timeout 5m \
+			--stats-one-line --stats 0; then
+			log "HATA: görsellerin uzak kopyası başarısız → $BACKUP_REMOTE/gorseller"
+			return 1
+		fi
+		log "görseller tamam → $BACKUP_REMOTE/gorseller"
+	fi
+	return 0
 }
 
 # Son başarılı yedeğin üzerinden çok zaman geçtiyse gürültü çıkarır.

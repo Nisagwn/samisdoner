@@ -79,6 +79,12 @@ services:
       LEGAL_SUPERVISORY_AUTHORITY: "${LEGAL_SUPERVISORY_AUTHORITY:-}"
       LEGAL_PRIVACY_CONTACT: "${LEGAL_PRIVACY_CONTACT:-}"
       LEGAL_REGISTER_ENTRY: "${LEGAL_REGISTER_ENTRY:-}"
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      # Panelden yüklenen ürün görselleri. İmajın içinde değil birimde durur:
+      # her dağıtımda imaj yenilenir, birim kalır. Uzak kopyası backup
+      # servisinde alınır.
+      - uploads:/app/uploads
     healthcheck:
       # Sağlık ucu veritabanına bir sorgu atar; kap ayakta ama veritabanı
       # yoksa trafiğe açılmaması gerekir.
@@ -203,6 +209,8 @@ services:
       RCLONE_CONFIG: /config/rclone/rclone.conf
     volumes:
       - ./backups:/backups
+      # Ürün görselleri yalnızca okunur; rclone ile uzak hedefe kopyalanır.
+      - uploads:/uploads:ro
       # rclone yapılandırması ve (gerekiyorsa) SSH anahtarı. Dizin yoksa Docker
       # boş olarak oluşturur; BACKUP_REMOTE de boşsa rclone hiç çağrılmaz.
       - ./deploy/backup-secrets:/config/rclone:ro
@@ -214,3 +222,4 @@ volumes:
   postgres-data:
   caddy-data:
   caddy-config:
+  uploads:
