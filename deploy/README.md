@@ -251,7 +251,10 @@ dc exec postgres psql -U doner -d doner
 1. `pg_dump` alıp sıkıştırır → `/opt/doner/backups/doner-<zaman>.sql.gz`
 2. **Bütünlüğünü sınar** (`gzip -t`). Geçmezse dosya atılır ve günlüğe hata
    düşer — yarıda kesilmiş bir dump, dizin dolu görünürken geri yüklenmez.
-3. `BACKUP_REMOTE` tanımlıysa **makine dışına** kopyalar (rclone).
+3. `BACKUP_REMOTE` tanımlıysa **makine dışına** kopyalar (rclone). Panelden
+   yüklenen ürün görselleri de `uploads` biriminden `<uzak-hedef>/gorseller`
+   altına kopyalanır — yalnızca yeni dosyalar gider, çünkü adları içerik
+   özetidir ve hiç değişmez.
 
 Ayrıca son başarılı yedeğin zamanı `backups/.son-basarili` dosyasına yazılır;
 48 saatten eskiyse her turda günlüğe hata düşer. Yerelde 14 günden eskiler
@@ -331,6 +334,18 @@ Uzaktaki bir yedeği önce indirin:
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm   --entrypoint rclone backup copy storagebox:doner-yedek /backups   --include 'doner-2026-09-10*'
+```
+
+Ürün görselleri veritabanı yedeğinde **yoktur**. Sunucu sıfırdan kurulduysa
+(birim de gittiyse) uzak hedeften birime geri kopyalayın — veritabanını geri
+yüklemeden önce ya da sonra, sıra fark etmez:
+
+```bash
+docker run --rm \
+  -v doner_uploads:/uploads \
+  -v "$PWD/deploy/backup-secrets:/config/rclone:ro" \
+  -e RCLONE_CONFIG=/config/rclone/rclone.conf \
+  --entrypoint rclone doner-backup copy storagebox:doner-yedek/gorseller /uploads
 ```
 
 > **Yılda birkaç kez `--dry-run` çalıştırın.** Hiç denenmemiş bir yedek, yedek

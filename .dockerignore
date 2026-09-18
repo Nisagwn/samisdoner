@@ -18,6 +18,8 @@ out
 .gitignore
 .claude
 backups
+# Yerelde yüklenen görseller imaja gömülmez; canlıda birimden gelir.
+uploads
 *.log
 *.tsbuildinfo
 next-env.d.ts

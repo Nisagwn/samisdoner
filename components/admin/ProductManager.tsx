@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { MAX_UPLOAD_BYTES, UPLOAD_PREFIX } from "@/lib/admin/imagePath";
 import {
   MAX_SPICY_LEVEL,
   VAT_RATES,
@@ -534,6 +535,37 @@ function ProductForm({
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft({ ...draft, [key]: value });
 
+  // Yükleme sürerken form doldurulmaya devam edebilir; yanıt geldiğinde o
+  // arada yazılanları eski taslakla ezmemek için en güncel taslak buradan okunur.
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const uploadImage = async (file: File) => {
+    setUploadError(null);
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setUploadError(`Görsel en fazla ${MAX_UPLOAD_BYTES / 1024 / 1024} MB olabilir.`);
+      return;
+    }
+    setUploading(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/admin/uploads", { method: "POST", body });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || typeof data?.image !== "string") {
+        setUploadError(data?.error ?? "Görsel yüklenemedi.");
+        return;
+      }
+      setDraft({ ...latestDraft.current, image: data.image });
+    } catch {
+      setUploadError("Sunucuya ulaşılamadı. Görsel yüklenemedi.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const setVariant = (index: number, patch: Partial<{ size: string; price: string }>) => {
     const variants = draft.variants.map((v, i) => (i === index ? { ...v, ...patch } : v));
     setDraft({ ...draft, variants });
@@ -609,31 +641,77 @@ function ProductForm({
             />
           </Field>
 
-          <div className="grid sm:grid-cols-2 gap-5">
-            <Field label="Kategori">
-              <Select
-                required
-                value={draft.categoryId}
-                onChange={(e) => set("categoryId", e.target.value)}
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+          <Field label="Kategori">
+            <Select
+              required
+              value={draft.categoryId}
+              onChange={(e) => set("categoryId", e.target.value)}
+              className="sm:max-w-[340px]"
+            >
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
 
-            <Field label="Görsel" hint="Boş bırakılırsa görsel gösterilmez.">
-              <Select value={draft.image} onChange={(e) => set("image", e.target.value)}>
-                <option value="">Görsel yok</option>
-                {imageOptions.map((src) => (
-                  <option key={src} value={src}>
-                    {src.replace("/assets/", "")}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+          {/* görsel: hazır listeden seçim ya da yeni yükleme */}
+          <div className="grid grid-cols-[88px_1fr] gap-4 items-start">
+            <div className="relative w-[88px] h-[88px] border border-line bg-panel overflow-hidden">
+              {draft.image ? (
+                <Image src={draft.image} alt="" fill sizes="88px" className="object-cover" />
+              ) : (
+                <span className="absolute inset-0 grid place-items-center tag text-smoke/50">—</span>
+              )}
+            </div>
+
+            <div className="min-w-0 space-y-2">
+              <span className="tag text-smoke block">Görsel</span>
+              <div className="flex flex-wrap gap-2">
+                <Select
+                  aria-label="Görsel"
+                  value={draft.image}
+                  onChange={(e) => set("image", e.target.value)}
+                  className="flex-1 min-w-[180px]"
+                >
+                  <option value="">Görsel yok</option>
+                  {draft.image.startsWith(UPLOAD_PREFIX) && (
+                    <option value={draft.image}>Yüklenen görsel</option>
+                  )}
+                  {imageOptions.map((src) => (
+                    <option key={src} value={src}>
+                      {src.replace("/assets/", "")}
+                    </option>
+                  ))}
+                </Select>
+                <label
+                  className={`tag border border-line px-4 py-2.5 font-semibold text-bone transition-colors focus-within:border-amber hover:border-amber hover:text-amber ${
+                    uploading ? "opacity-40 pointer-events-none" : "cursor-pointer"
+                  }`}
+                >
+                  {uploading ? "YÜKLENİYOR…" : "+ FOTOĞRAF YÜKLE"}
+                  <input
+                    type="file"
+                    // HEIC listede yok: iPhone bu durumda fotoğrafı kendisi JPG'ye çevirir.
+                    accept="image/jpeg,image/png,image/webp,image/avif"
+                    className="sr-only"
+                    disabled={uploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      // Aynı dosya yeniden seçilebilsin diye alan hemen boşaltılır.
+                      e.target.value = "";
+                      if (file) void uploadImage(file);
+                    }}
+                  />
+                </label>
+              </div>
+              <span className="block text-xs text-smoke/70">
+                JPG, PNG veya WebP; en fazla {MAX_UPLOAD_BYTES / 1024 / 1024} MB. Fotoğraf
+                küçültülür, konum bilgisi silinir. Menüye ürün kaydedilince yansır.
+              </span>
+              {uploadError && <Notice kind="error" message={uploadError} />}
+            </div>
           </div>
 
           <div className="grid sm:grid-cols-2 gap-5">
@@ -878,7 +956,7 @@ function ProductForm({
           >
             VAZGEÇ
           </button>
-          <Button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy || uploading}>
             {busy ? "KAYDEDİLİYOR…" : "KAYDET"}
           </Button>
         </div>

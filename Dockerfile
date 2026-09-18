@@ -86,6 +86,12 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates wget \
   && rm -rf /var/lib/apt/lists/*
 
+# Panelden yüklenen görsellerin dizini (compose'da kalıcı birim bağlanır).
+# İmajda `node`a ait olarak var olmak zorunda: Docker boş bir birimi ilk
+# bağlayışta sahipliği buradan kopyalar. Dizin yoksa birim root'a ait gelir ve
+# her yükleme EACCES ile düşer.
+RUN mkdir -p /app/uploads && chown node:node /app/uploads
+
 # Kap root olarak çalışmaz: bir açık, kapın içinde yazma yetkisi bulmasın.
 # node imajı `node` kullanıcısını hazır getirir.
 USER node
