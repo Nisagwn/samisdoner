@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import type { MenuItem, MenuSection, MenuVariant } from "@/data/speisekarte";
@@ -12,7 +12,7 @@ import ProductBadges from "@/components/ProductBadges";
 import ProductDialog, { type ProductDraft } from "@/components/ProductDialog";
 import MenuStatusBanner from "@/components/MenuStatusBanner";
 import { Button } from "@/components/ui";
-import { matchesMenuItem } from "@/lib/menu/search";
+import { filterMenuSections, normalizeNeedle } from "@/lib/menu/search";
 import { isRequiredGroup } from "@/lib/menu/options";
 import { useLanguage, type Language } from "@/lib/i18n/LanguageContext";
 
@@ -42,6 +42,9 @@ export default function MenuGrid({ sections }: Props) {
   const { t, lang } = useLanguage();
   const { add } = useCart();
   const section = useRef<HTMLDivElement>(null);
+  const strip = useRef<HTMLElement>(null);
+  const results = useRef<HTMLDivElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(sections[0]?.id ?? "");
 
@@ -54,20 +57,61 @@ export default function MenuGrid({ sections }: Props) {
    */
   const [opened, setOpened] = useState<MenuItem | null>(null);
 
-  const needle = query.trim();
+  const needle = normalizeNeedle(query);
 
   /**
-   * Aramanın uygulanmış hâli.
+   * Aramanın uygulanmış hâli (bkz. lib/menu/search.ts).
    *
-   * Süzgeç kategoriyi değil ürünü eler; hiç ürünü kalmayan kategori listeden
-   * tamamen düşer, böylece boş başlıklar arasında gezinmek gerekmez.
+   * Bağımlılık ham metin değil `needle`: sona eklenen bir boşluk listeyi
+   * değiştirmez, kart animasyonlarını ve gözlemcileri de baştan kurdurmamalı.
    */
-  const visible = useMemo(() => {
-    if (!needle) return sections;
-    return sections
-      .map((cat) => ({ ...cat, items: cat.items.filter((item) => matchesMenuItem(item, needle)) }))
-      .filter((cat) => cat.items.length > 0);
-  }, [sections, needle]);
+  const visible = useMemo(() => filterMenuSections(sections, needle), [sections, needle]);
+
+  /**
+   * Sonuçların başını yapışkan şeridin hemen altına getirir.
+   *
+   * Müşteri menünün ortasındayken arama yazarsa liste altından kısalır ve
+   * tarayıcı onu sayfanın dibine — altbilgiye — bırakır: sonuçlar yukarıda
+   * kalmış, ekranda yalnızca "SAMİ´S // DÖNER" yazısı asılı durur. Bu yüzden
+   * liste kısaldığında görünüm sonuçların başına alınır.
+   *
+   * `onlyIfPast`: yalnızca sonuçların başı zaten geçilmişse kaydırır; sayfanın
+   * üstünde yazan müşteriyi yerinden oynatmamak için.
+   *
+   * Anlık kaydırma bilerek seçildi: Lenis kendi animasyonu yokken yerel
+   * kaydırmayı hemen benimser, yumuşak kaydırma ise yazarken her harfte
+   * yeniden başlayıp titrerdi.
+   */
+  const scrollToResults = useCallback((onlyIfPast: boolean) => {
+    const list = results.current;
+    const bar = strip.current;
+    if (!list || !bar) return;
+    const offset = (parseFloat(getComputedStyle(bar).top) || 0) + bar.offsetHeight + 16;
+    const top = list.getBoundingClientRect().top;
+    if (onlyIfPast && top >= offset) return;
+    window.scrollTo({ top: Math.max(0, window.scrollY + top - offset), behavior: "auto" });
+  }, []);
+
+  const lastNeedle = useRef(needle);
+  useEffect(() => {
+    if (lastNeedle.current === needle) return;
+    lastNeedle.current = needle;
+    scrollToResults(true);
+  }, [needle, scrollToResults]);
+
+  /**
+   * Klavyedeki "Ara"/Enter.
+   *
+   * Süzme zaten yazarken oluyor; eskiden bu tuş hiçbir şey yapmadığı için
+   * telefonda klavye açık kalıyor, yazılan metin ekranın altında klavyenin
+   * üstünde asılı duruyordu. Artık klavye kapanır ve sonuçlara gidilir.
+   */
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    searchInput.current?.blur();
+    // Klavye kapanınca görünüm yeniden boyutlanır; ölçüm bir kare sonra.
+    requestAnimationFrame(() => scrollToResults(false));
+  }
 
   // Arama listeyi daralttığında seçili kategori listeden düşmüş olabilir;
   // şeritte hiçbir şey işaretli kalmasın.
@@ -76,6 +120,52 @@ export default function MenuGrid({ sections }: Props) {
       setActive(visible[0].id);
     }
   }, [visible, active]);
+
+  /**
+   * Derin bağlantı: `/speisekarte?produkt=<id>`.
+   *
+   * Hesap tarafındaki değerlendirme ekranı "2× Döner Teller" etiketini buraya
+   * bağlıyor — müşteri yıldız verirken "neydi bu" diyebilmeli ve ürünü tek
+   * tıkla açabilmeli. Ayrı bir ürün sayfası yok (bkz. ProductDialog'daki
+   * gerekçe); ürünün "sayfası" menüdeki kendi penceresidir.
+   *
+   * Arama süzgecinden bağımsız olarak **tüm** katalogda aranır: bağlantıyı
+   * açan kişinin kutuda ne yazdığı, aradığı ürünün bulunup bulunmamasını
+   * belirlememeli.
+   *
+   * Parametre açıldıktan sonra adresten silinir (`replaceState`): pencereyi
+   * kapatıp sayfayı tazeleyen ya da geri gelen müşteriye aynı pencere ikinci
+   * kez açılmasın. Geçmişe yeni bir kayıt da eklenmez.
+   */
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("produkt");
+    if (!wanted) return;
+
+    const item = sections
+      .flatMap((category) => category.items)
+      .find((candidate) => candidate.productId === wanted);
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("produkt");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+
+    // Ürün menüden düşmüşse (pasif / tükenmiş) hiçbir şey açılmaz: müşteri
+    // menünün başında kalır, boş bir pencere görmez.
+    if (!item?.productId) return;
+
+    /*
+     * Önce kaydır, sonra aç — sırası önemli.
+     *
+     * Pencere açıkken arkadaki sayfa kilitlenir (`useScrollLock`, body
+     * `overflow: hidden`) ve o sırada yapılan kaydırma hiçbir işe yaramaz.
+     * Ters sırada müşteri pencereyi kapattığında sayfanın en başında kalır,
+     * baktığı ürün ekranda değildir.
+     */
+    document
+      .getElementById(`produkt-${item.productId}`)
+      ?.scrollIntoView({ block: "center", behavior: "auto" });
+    requestAnimationFrame(() => setOpened(item));
+  }, [sections]);
 
   // Kartların görünüre girerken yumuşak açılışı — sitenin geri kalanıyla aynı ritim.
   useEffect(() => {
@@ -131,7 +221,9 @@ export default function MenuGrid({ sections }: Props) {
     <section
       ref={section}
       id="menu"
-      className="relative overflow-hidden bg-char pb-28 md:pb-36 pt-16 md:pt-20 border-t border-line"
+      // `overflow-hidden` değil `overflow-clip`: hidden bölümü bir kaydırma
+      // kabı yapar ve içindeki yapışkan kategori şeridi hiç yapışmaz.
+      className="relative overflow-clip bg-char pb-28 md:pb-36 pt-16 md:pt-20 border-t border-line"
     >
       <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,#FF3D12,#FFC247,#7BD66F,transparent)]" />
       <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_16%_10%,rgba(255,61,18,0.16),transparent_36%),radial-gradient(ellipse_at_86%_20%,rgba(98,213,255,0.10),transparent_34%)]" />
@@ -161,6 +253,7 @@ export default function MenuGrid({ sections }: Props) {
           `--nav-h` header yüksekliğini taşır (globals.css). Mobilde kategoriler
           yatay kaydırılır, arama kutusu altına iner. */}
       <nav
+        ref={strip}
         aria-label={t.menuGrid.categoryNavLabel}
         className="sticky top-[var(--nav-h)] z-30 bg-void/95 backdrop-blur-md border-y border-line mb-12"
       >
@@ -190,32 +283,46 @@ export default function MenuGrid({ sections }: Props) {
             </ul>
           </div>
 
-          <div className="relative shrink-0 px-6 md:px-10 pb-3 lg:py-2">
+          <form
+            role="search"
+            onSubmit={submitSearch}
+            className="relative shrink-0 px-6 md:px-10 pb-3 lg:py-2"
+          >
             <label htmlFor="menu-search" className="sr-only">
               {t.menuGrid.searchLabel}
             </label>
+            {/* Tarayıcının kendi temizleme düğmesi gizlenir: yanındaki ✕ ile
+                üst üste biniyor, ekranda iki çarpı görünüyordu. */}
             <input
+              ref={searchInput}
               id="menu-search"
               type="search"
+              enterKeyHint="search"
+              autoComplete="off"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t.menuGrid.searchPlaceholder}
-              className="w-full lg:w-[260px] bg-char border border-line px-3 py-2 text-sm text-bone placeholder:text-smoke/50 outline-none transition-colors focus:border-amber"
+              className="w-full lg:w-[260px] bg-char border border-line pl-3 pr-10 py-2 text-sm text-bone placeholder:text-smoke/50 outline-none transition-colors focus:border-amber [&::-webkit-search-cancel-button]:appearance-none"
             />
             {query && (
               <button
-                onClick={() => setQuery("")}
+                // Formun içinde: tür yazılmazsa temizlemek yerine gönderirdi.
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  searchInput.current?.focus();
+                }}
                 aria-label={t.menuGrid.searchClear}
                 className="focus-ring absolute right-8 md:right-12 top-1/2 -translate-y-1/2 px-2 text-smoke hover:text-flame transition-colors"
               >
                 ✕
               </button>
             )}
-          </div>
+          </form>
         </div>
       </nav>
 
-      <div className="relative z-10 max-w-[1400px] mx-auto px-6 md:px-10">
+      <div ref={results} className="relative z-10 max-w-[1400px] mx-auto px-6 md:px-10">
         {sections.length === 0 && (
           <p className="border border-line bg-void px-5 py-8 text-center text-smoke">
             {t.menuGrid.empty}
@@ -223,7 +330,7 @@ export default function MenuGrid({ sections }: Props) {
         )}
         {sections.length > 0 && visible.length === 0 && (
           <p className="border border-line bg-void px-5 py-8 text-center text-smoke">
-            {t.menuGrid.noResults.replace("{query}", query.trim())}
+            {t.menuGrid.noResults.replace("{query}", needle)}
           </p>
         )}
 
@@ -364,7 +471,12 @@ function MenuRow({
   }
 
   return (
-    <li className="menu-card bg-void hover:bg-panel transition-colors duration-300 p-5 md:p-6 flex gap-4">
+    <li
+      /* Derin bağlantının kaydırma hedefi; ürünsüz (salt okunur) satırda id
+         verilmez, çünkü onun bağlanabileceği bir kimliği yok. */
+      {...(item.productId ? { id: `produkt-${item.productId}` } : {})}
+      className="menu-card scroll-mt-[calc(var(--nav-h)+4rem)] bg-void hover:bg-panel transition-colors duration-300 p-5 md:p-6 flex gap-4"
+    >
       {item.no && (
         <span className="font-mono text-sm text-flame shrink-0 tabular-nums pt-0.5 w-9">
           {item.no}

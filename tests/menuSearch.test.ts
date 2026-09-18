@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { matchesMenuItem, normalizeNeedle, type SearchableItem } from "@/lib/menu/search";
+import {
+  filterMenuSections,
+  matchesMenuItem,
+  normalizeNeedle,
+  type SearchableItem,
+} from "@/lib/menu/search";
 
 /**
  * Kartadaki arama.
@@ -92,5 +97,72 @@ describe("büyük/küçük harf", () => {
   it("Türkçe noktasız ı de katlanır", () => {
     const item: SearchableItem = { name: "Ayran", nameTr: "Ayran ılık" };
     expect(matchesMenuItem(item, "ilik")).toBe(true);
+  });
+});
+
+describe("birden çok kelime", () => {
+  it("kelimeler yan yana geçmek zorunda değil", () => {
+    // Ad "Hähnchendöner", içerik "Mit Salat und Soße".
+    expect(matchesMenuItem(doener, "soße hähnchen")).toBe(true);
+    expect(matchesMenuItem(doener, "doener salat")).toBe(true);
+  });
+
+  it("kelimelerden biri yoksa eşleşmez", () => {
+    expect(matchesMenuItem(doener, "salat pizza")).toBe(false);
+  });
+});
+
+describe("noktalama", () => {
+  it("kesme işareti yazılmasa da bulur", () => {
+    const item: SearchableItem = { name: "Sami's Salat" };
+    expect(matchesMenuItem(item, "samis")).toBe(true);
+    expect(matchesMenuItem(item, "sami´s")).toBe(true);
+  });
+
+  it("tire ile boşluk aynı sayılır", () => {
+    const item: SearchableItem = { name: "Coca-Cola" };
+    expect(matchesMenuItem(item, "coca cola")).toBe(true);
+  });
+
+  it("yalnızca noktalamadan oluşan arama listeyi boşaltmaz", () => {
+    expect(matchesMenuItem(doener, "-")).toBe(true);
+  });
+});
+
+describe("kategori listesi", () => {
+  const sections = [
+    {
+      id: "getraenke",
+      title: "Getränke",
+      titleTr: "İçecekler",
+      items: [{ name: "Coca Cola" }, { name: "Ayran" }] as SearchableItem[],
+    },
+    { id: "snacks", title: "Snack's", items: [{ name: "Hamburger" }] as SearchableItem[] },
+    { id: "drehspiess", title: "Drehspieß", titleTr: "Döner", items: [doener] },
+  ];
+
+  it("boş aramada aynı diziyi döndürür", () => {
+    expect(filterMenuSections(sections, "  ")).toBe(sections);
+  });
+
+  it("kategori adıyla aranınca kategorinin tamamı gelir", () => {
+    const result = filterMenuSections(sections, "getranke");
+    expect(result.map((s) => s.id)).toEqual(["getraenke"]);
+    expect(result[0].items).toHaveLength(2);
+  });
+
+  it("Türkçe kategori adıyla da bulunur", () => {
+    expect(filterMenuSections(sections, "içecek").map((s) => s.id)).toEqual(["getraenke"]);
+    expect(filterMenuSections(sections, "icecek").map((s) => s.id)).toEqual(["getraenke"]);
+  });
+
+  it("kesme işaretli kategori adını bulur (snacks → Snack's)", () => {
+    expect(filterMenuSections(sections, "snacks").map((s) => s.id)).toEqual(["snacks"]);
+  });
+
+  it("ürünü kalmayan kategori düşer", () => {
+    const result = filterMenuSections(sections, "ayran");
+    expect(result.map((s) => s.id)).toEqual(["getraenke"]);
+    expect(result[0].items.map((i) => i.name)).toEqual(["Ayran"]);
   });
 });
