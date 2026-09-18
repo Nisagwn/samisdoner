@@ -17,6 +17,7 @@ import {
   type OptionGroup,
 } from "@/lib/menu/options";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import type { ProductReviewsResponse } from "@/app/api/menu/reviews/route";
 import { useScrollLock } from "@/lib/useScrollLock";
 import { Button, QtyStepper, TextArea } from "@/components/ui";
 import ProductBadges from "@/components/ProductBadges";
@@ -393,6 +394,14 @@ export default function ProductDialog({ item, mode, initial, onClose, onSubmit }
               <p className="mt-1.5 text-xs text-smoke/70">{t.ordering.item.noteHint}</p>
             </div>
 
+            {/* Değerlendirmeler. Ürünün "sayfası" bu pencere olduğu için
+                başkalarının ne dediği de burada okunur — menüye dönüp sitenin
+                genel yorum bölümünü aramak, sipariş kararını verdiği anda
+                müşteriyi buradan çıkarırdı. */}
+            {item.productId && (
+              <ProductReviews productId={item.productId} t={t} de={dialogLang !== "tr"} />
+            )}
+
             {/* Alerjen bildirimi ürün seviyesinde de görünür: menünün en
                 altındaki tek uyarıyı, pencereden sipariş veren müşteri hiç
                 görmeyebilir (LMIV Art. 14 mesafeli satışta bilginin sipariş
@@ -455,5 +464,132 @@ export default function ProductDialog({ item, mode, initial, onClose, onSubmit }
         </div>
       </div>
     </div>
+  );
+}
+
+
+/* ------------------------------------------------------ değerlendirmeler */
+
+/**
+ * Ürünün değerlendirmeleri.
+ *
+ * Veri **pencere açıldığında** çekilir, menüyle birlikte değil: menüde
+ * altmışa yakın ürün var ve hepsinin yorumlarını her sayfa isteğinde
+ * göndermek, okunmayan metinle sayfayı şişirirdi.
+ *
+ * Yüklenemezse bölüm sessizce kaybolmaz, tek satırlık bir not bırakır:
+ * "yorum yok" ile "yorumlar gelmedi" aynı şey değil ve müşteri ikisini
+ * ayırt edebilmeli.
+ */
+function ProductReviews({
+  productId,
+  t,
+  de,
+}: {
+  productId: string;
+  t: ReturnType<typeof useLanguage>["t"];
+  de: boolean;
+}) {
+  const [data, setData] = useState<ProductReviewsResponse | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setData(null);
+    setFailed(false);
+
+    fetch(`/api/menu/reviews?productId=${encodeURIComponent(productId)}`, {
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("failed"))))
+      .then((body: ProductReviewsResponse) => setData(body))
+      .catch((error: unknown) => {
+        // Pencere kapanınca istek iptal edilir; bu bir arıza değil.
+        if (controller.signal.aborted) return;
+        void error;
+        setFailed(true);
+      });
+
+    return () => controller.abort();
+  }, [productId]);
+
+  const formatDate = (iso: string) =>
+    new Intl.DateTimeFormat(de ? "de-DE" : "tr-TR", {
+      timeZone: "Europe/Berlin",
+      dateStyle: "medium",
+    }).format(new Date(iso));
+
+  return (
+    <section className="mt-6 border-t border-line pt-5">
+      <h3 className="tag mb-1 text-bone">{t.ordering.item.reviewsTitle}</h3>
+
+      {failed && <p className="text-sm text-smoke">{t.ordering.item.reviewsFailed}</p>}
+      {!failed && data === null && (
+        <p className="text-sm text-smoke/70">{t.ordering.item.reviewsLoading}</p>
+      )}
+
+      {data !== null && data.count === 0 && (
+        <p className="text-sm text-smoke/70">{t.ordering.item.reviewsNone}</p>
+      )}
+
+      {data !== null && data.count > 0 && (
+        <>
+          <p className="mb-4 text-xs leading-relaxed text-smoke/70">
+            {t.ordering.item.reviewsLead}
+          </p>
+
+          <div className="flex flex-wrap items-baseline gap-3">
+            <span aria-hidden="true" className="font-display text-lg tracking-wider text-amber">
+              {"★".repeat(Math.round(data.average ?? 0))}
+              <span className="text-smoke/30">
+                {"★".repeat(5 - Math.round(data.average ?? 0))}
+              </span>
+            </span>
+            <span className="font-mono text-sm tabular-nums text-bone">
+              {t.ordering.item.reviewsAverage.replace(
+                "{average}",
+                (data.average ?? 0).toFixed(1).replace(".", de ? "," : ".")
+              )}
+            </span>
+            <span className="tag text-smoke">
+              {t.ordering.item.reviewsCount.replace("{count}", String(data.count))}
+            </span>
+          </div>
+
+          {data.items.length > 0 && (
+            <ul className="mt-4 space-y-3">
+              {data.items.map((review) => (
+                <li key={review.id} className="border border-line bg-void/60 p-4">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm text-bone">{review.authorName}</span>
+                    <span className="font-mono text-xs text-smoke/70">
+                      {formatDate(review.createdAt)}
+                    </span>
+                  </div>
+                  <span
+                    aria-label={
+                      de
+                        ? `${review.foodRating} von 5 Sternen`
+                        : `5 üzerinden ${review.foodRating} yıldız`
+                    }
+                    className="mt-1 block font-display text-sm tracking-wider text-amber"
+                  >
+                    {"★".repeat(review.foodRating)}
+                    <span className="text-smoke/30">{"★".repeat(5 - review.foodRating)}</span>
+                  </span>
+                  <p className="mt-2 text-sm leading-relaxed text-smoke">{review.comment}</p>
+                  {review.reply && (
+                    <div className="mt-3 border-l-2 border-amber bg-char/60 py-2 pl-3">
+                      <p className="tag mb-1 text-amber">{t.ordering.item.reviewsReplyLabel}</p>
+                      <p className="text-sm leading-relaxed text-bone">{review.reply}</p>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
   );
 }

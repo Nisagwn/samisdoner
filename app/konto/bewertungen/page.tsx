@@ -41,6 +41,7 @@ export default async function AccountReviewsPage() {
         pending={pending}
         own={own.map((review) => ({
           orderNo: review.orderNo,
+          items: review.items,
           foodRating: review.foodRating,
           deliveryRating: review.deliveryRating,
           comment: review.comment,

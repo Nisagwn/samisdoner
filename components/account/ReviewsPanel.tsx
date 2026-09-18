@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { formatCents } from "@/lib/money";
-import type { PendingReview } from "@/lib/reviews/repository";
+import type { PendingReview, ReviewedItem } from "@/lib/reviews/repository";
 import { accountTexts } from "./texts";
 import { PanelHeader } from "./fields";
 
@@ -23,6 +24,7 @@ import { PanelHeader } from "./fields";
 
 export type OwnReview = {
   orderNo: string;
+  items: ReviewedItem[];
   foodRating: number;
   deliveryRating: number | null;
   comment: string;
@@ -82,6 +84,7 @@ export default function ReviewsPanel({
                   <Stars value={review.foodRating} />
                   <span className="tag text-smoke/70">{review.orderNo}</span>
                 </div>
+                <ReviewedItems items={review.items} summary="" de={de} />
                 {review.comment && (
                   <p className="mt-3 text-sm leading-relaxed text-smoke">{review.comment}</p>
                 )}
@@ -100,6 +103,64 @@ export default function ReviewsPanel({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * "Neyi değerlendiriyorsunuz" satırı.
+ *
+ * Eskiden burada tek bir kesilmiş özet vardı ("2× Döner Teller, 1× Ay…") ve
+ * müşteri yıldız verirken hangi yemekten bahsettiğini göremiyordu. Artık her
+ * satır ayrı bir etiket ve katalogda hâlâ duran ürünler menüdeki kendi
+ * pencerelerine götürüyor: "neydi bu" sorusunun cevabı bir tık uzakta.
+ *
+ * Katalogdan düşmüş ürün (`productId` boş) bağlantı olmaz, düz etiket kalır —
+ * hiçbir yere gitmeyen bir bağlantı, bağlantı olmamasından kötüdür.
+ */
+function ReviewedItems({
+  items,
+  summary,
+  de,
+}: {
+  items: ReviewedItem[];
+  /** Satır listesi boşsa düşülecek metin; yoksa hiçbir şey çizilmez. */
+  summary: string;
+  de: boolean;
+}) {
+  const t = accountTexts(de);
+  if (items.length === 0) {
+    return summary ? <p className="mt-2 text-sm text-bone">{summary}</p> : null;
+  }
+
+  return (
+    <div className="mt-3">
+      <p className="tag mb-2 text-smoke/70">{t.reviewsItemsLabel}</p>
+      <ul className="flex flex-wrap gap-2">
+        {items.map((item, index) => {
+          const label = `${item.qty}× ${item.label}`;
+          return (
+            <li key={`${item.productId ?? item.label}-${index}`}>
+              {item.productId ? (
+                <Link
+                  href={`/speisekarte?produkt=${encodeURIComponent(item.productId)}`}
+                  title={t.reviewsItemLink}
+                  className="focus-ring inline-flex items-center gap-1.5 border border-line bg-void/60 px-3 py-1.5 text-sm text-bone transition-colors hover:border-amber hover:text-amber"
+                >
+                  {label}
+                  <span aria-hidden="true" className="text-amber">
+                    →
+                  </span>
+                </Link>
+              ) : (
+                <span className="inline-flex items-center border border-line/60 px-3 py-1.5 text-sm text-smoke">
+                  {label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -151,6 +212,7 @@ function ReviewForm({
       }
       onDone({
         orderNo: order.orderNo,
+        items: order.items,
         foodRating: food,
         deliveryRating: order.asksDelivery && delivery > 0 ? delivery : null,
         comment: comment.trim(),
@@ -167,14 +229,14 @@ function ReviewForm({
 
   return (
     <li className="border border-line bg-char p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line/60 pb-4">
-        <div className="min-w-0">
+      <div className="border-b border-line/60 pb-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="tag text-smoke/70">{order.orderNo}</p>
-          <p className="mt-1 truncate text-sm text-bone">{order.summary}</p>
+          <span className="tag shrink-0 tabular-nums text-smoke">
+            {formatCents(order.totalCents)}
+          </span>
         </div>
-        <span className="tag shrink-0 tabular-nums text-smoke">
-          {formatCents(order.totalCents)}
-        </span>
+        <ReviewedItems items={order.items} summary={order.summary} de={de} />
       </div>
 
       <form onSubmit={submit} className="mt-5 space-y-5">

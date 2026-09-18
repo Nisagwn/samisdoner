@@ -130,6 +130,9 @@ const DE = {
   reviewsClosesAt: "Bewertbar bis",
   reviewsError: "Die Bewertung konnte nicht gespeichert werden.",
   reviewsMineTitle: "Bereits abgegeben",
+  /** Yıldızların üstündeki satır: neyi puanladığı görünür olsun. */
+  reviewsItemsLabel: "Sie bewerten",
+  reviewsItemLink: "Zum Gericht in der Speisekarte",
   reviewsReplyLabel: "Antwort von Sami´s Döner",
   reviewsHidden:
     "Diese Bewertung ist derzeit nicht öffentlich sichtbar.",
@@ -293,6 +296,8 @@ const TR: typeof DE = {
   reviewsClosesAt: "Son değerlendirme tarihi",
   reviewsError: "Değerlendirme kaydedilemedi.",
   reviewsMineTitle: "Yazdıklarınız",
+  reviewsItemsLabel: "Değerlendirdiğiniz",
+  reviewsItemLink: "Ürünü menüde aç",
   reviewsReplyLabel: "Sami´s Döner'in cevabı",
   reviewsHidden: "Bu değerlendirme şu anda sitede görünmüyor.",
 

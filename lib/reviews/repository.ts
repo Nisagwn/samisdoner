@@ -9,6 +9,11 @@ import {
   reviewEligibility,
   reviewOpensAt,
 } from "./eligibility";
+import {
+  EMPTY_PRODUCT_SUMMARY,
+  groupReviewsByProduct,
+  type ProductReviewSummary,
+} from "./products";
 import type { ReviewSubmitInput } from "./schema";
 
 /**
@@ -21,12 +26,31 @@ import type { ReviewSubmitInput } from "./schema";
 
 /* ────────────────────────────────────────── müşteri tarafı: bekleyenler */
 
+/**
+ * Değerlendirilen siparişin bir satırı.
+ *
+ * Müşteri "hangi siparişi" değil "hangi yemeği" hatırlar: sipariş numarası
+ * tek başına hiçbir şey anlatmaz. Satırlar tek tek verilir ki ekran onları
+ * ürüne götüren bağlantılar hâline getirebilsin.
+ *
+ * `productId` boş olabilir: katalogdan silinmiş ya da ürüne bağlı olmayan
+ * (teslimat ücreti gibi) satırlarda bağlantı kurulamaz — o satır düz metin
+ * kalır. Sipariş satırı ürünün anlık görüntüsüdür, ürünün kendisi değil.
+ */
+export type ReviewedItem = {
+  productId: string | null;
+  label: string;
+  qty: number;
+};
+
 export type PendingReview = {
   orderNo: string;
   /** Sipariş tarihi, müşterinin hangi akşamdan bahsettiğini bilmesi için. */
   placedAt: string;
   /** Kısa özet: "2× Döner Teller, 1× Ayran". */
   summary: string;
+  /** Aynı özetin satırlara ayrılmış hâli; ürüne bağlantı kurmak için. */
+  items: ReviewedItem[];
   totalCents: number;
   /** Teslimat puanı sorulacak mı — gel-alda sorulmaz. */
   asksDelivery: boolean;
@@ -62,7 +86,11 @@ export async function listPendingReviews(
       createdAt: true,
       deliveredAt: true,
       totalCents: true,
-      lines: { select: { label: true, qty: true }, orderBy: { id: "asc" }, take: 4 },
+      lines: {
+        select: { label: true, qty: true, productId: true },
+        orderBy: { id: "asc" },
+        take: CUSTOMER_ITEM_LIMIT,
+      },
     },
   });
   if (orders.length === 0) return [];
@@ -87,6 +115,11 @@ export async function listPendingReviews(
         orderNo: order.orderNo,
         placedAt: order.createdAt.toISOString(),
         summary: order.lines.map((line) => `${line.qty}× ${line.label}`).join(", "),
+        items: order.lines.map((line) => ({
+          productId: line.productId,
+          label: line.label,
+          qty: line.qty,
+        })),
         totalCents: order.totalCents,
         asksDelivery: asksDeliveryRating(order.fulfillment),
         closesAt: new Date(
@@ -191,13 +224,21 @@ export async function submitReview(
   }
 }
 
-/** Müşterinin kendi yazdıkları — hesabında görebilmeli. */
+/**
+ * Müşterinin kendi yazdıkları — hesabında görebilmeli.
+ *
+ * Yazılan her değerlendirmenin yanında **hangi yemeğe** verildiği de döner:
+ * listede yalnızca sipariş numarası olsaydı müşteri kendi yorumunu okuyup
+ * neye yazdığını hatırlayamazdı. Satırlar ikinci bir sorguda, hepsi birden
+ * alınır — değerlendirme başına ayrı sorgu otuz gidiş-dönüş demekti.
+ */
 export async function listOwnReviews(customerId: string) {
-  return prisma.review.findMany({
+  const reviews = await prisma.review.findMany({
     where: { customerId },
     orderBy: { createdAt: "desc" },
     take: 30,
     select: {
+      orderId: true,
       orderNo: true,
       foodRating: true,
       deliveryRating: true,
@@ -208,7 +249,58 @@ export async function listOwnReviews(customerId: string) {
       createdAt: true,
     },
   });
+  return attachItems(reviews, CUSTOMER_ITEM_LIMIT);
 }
+
+/**
+ * Siparişlerin değerlendirmede gösterilecek satırları, sipariş kimliğine göre.
+ *
+ * Satır türüne bakılmaz: `OrderLine` yalnızca ürünleri tutar, teslimat ücreti
+ * ve bahşiş siparişin kendi alanlarında durur (bkz. `Order.deliveryFeeCents`).
+ *
+ * `perOrder` müşteri ekranında dört, panelde daha yüksek: müşteriye kendi
+ * siparişini hatırlatmaya birkaç satır yeter ve uzun bir liste asıl işi
+ * (yıldız vermek) aşağı iter; panelde ise soru "müşteri neyi puanladı" ve
+ * eksik bir liste o soruyu yarım bırakır.
+ */
+async function reviewedItemsByOrder(
+  orderIds: string[],
+  perOrder: number
+): Promise<Map<string, ReviewedItem[]>> {
+  const lines = await prisma.orderLine.findMany({
+    where: { orderId: { in: orderIds } },
+    orderBy: { id: "asc" },
+    select: { orderId: true, productId: true, label: true, qty: true },
+  });
+
+  const map = new Map<string, ReviewedItem[]>();
+  for (const line of lines) {
+    const list = map.get(line.orderId) ?? [];
+    if (list.length < perOrder) {
+      list.push({ productId: line.productId, label: line.label, qty: line.qty });
+    }
+    map.set(line.orderId, list);
+  }
+  return map;
+}
+
+/** Değerlendirme satırlarına siparişin ürünlerini ekler. */
+async function attachItems<T extends { orderId: string }>(
+  rows: T[],
+  perOrder: number
+): Promise<(T & { items: ReviewedItem[] })[]> {
+  if (rows.length === 0) return [];
+  const map = await reviewedItemsByOrder(
+    rows.map((row) => row.orderId),
+    perOrder
+  );
+  return rows.map((row) => ({ ...row, items: map.get(row.orderId) ?? [] }));
+}
+
+/** Müşteri ekranında bir siparişten gösterilen en fazla ürün satırı. */
+const CUSTOMER_ITEM_LIMIT = 4;
+/** Panelde gösterilen en fazla ürün satırı; siparişlerin neredeyse tamamı sığar. */
+const ADMIN_ITEM_LIMIT = 20;
 
 /* ─────────────────────────────────────────────────────── site tarafı */
 
@@ -268,7 +360,8 @@ export async function getPublicReviews(limit = 8): Promise<ReviewSummary> {
  */
 export async function invalidateReviews(): Promise<void> {
   await invalidate(
-    ...[4, 6, 8, 12, 24].map((limit) => `${CACHE_KEYS.reviews}:${limit}`)
+    ...[4, 6, 8, 12, 24].map((limit) => `${CACHE_KEYS.reviews}:${limit}`),
+    PRODUCT_INDEX_KEY
   );
 }
 
@@ -316,28 +409,105 @@ export async function getReviewSummary(limit = 8): Promise<ReviewSummary> {
   };
 }
 
-/* ────────────────────────────────────────────────────── panel tarafı */
+/* ─────────────────────────────────────────── ürün başına değerlendirme */
 
-export async function listReviewsForAdmin(take = 100) {
-  return prisma.review.findMany({
+/** Dizinin önbellek anahtarı; `invalidateReviews` bunu da düşürür. */
+const PRODUCT_INDEX_KEY = `${CACHE_KEYS.reviews}:by-product`;
+
+/**
+ * Ürün kimliği → özet.
+ *
+ * Ürün başına ayrı sorgu yerine **tek seferde tüm dizin** kurulur: menüde
+ * altmışa yakın ürün var, penceresi açılan her ürün için iki sorgu atmak aynı
+ * iki sorguyu altmış kez tekrarlamak demekti. Site ölçeğinde (yılda birkaç yüz
+ * yorum) tüm yorumları okumak zaten ucuz ve sonuç önbellekte.
+ *
+ * Puanın ürüne değil siparişe ait olduğu ve dağıtımın nasıl yapıldığı
+ * `lib/reviews/products.ts` içinde yazılı.
+ */
+export async function getProductReviewIndex(): Promise<Record<string, ProductReviewSummary>> {
+  return cached(PRODUCT_INDEX_KEY, SUMMARY_TTL_SECONDS, buildProductReviewIndex);
+}
+
+/** Tek ürünün özeti; hiç değerlendirme yoksa boş özet (null değil). */
+export async function getProductReviews(productId: string): Promise<ProductReviewSummary> {
+  if (!productId) return EMPTY_PRODUCT_SUMMARY;
+  const index = await getProductReviewIndex();
+  return index[productId] ?? EMPTY_PRODUCT_SUMMARY;
+}
+
+async function buildProductReviewIndex(): Promise<Record<string, ProductReviewSummary>> {
+  const reviews = await prisma.review.findMany({
+    where: { published: true },
     orderBy: { createdAt: "desc" },
-    take,
     select: {
       id: true,
-      orderNo: true,
+      orderId: true,
       authorName: true,
       foodRating: true,
       deliveryRating: true,
       comment: true,
       reply: true,
-      repliedAt: true,
-      repliedBy: true,
-      published: true,
-      hiddenReason: true,
-      lang: true,
       createdAt: true,
     },
   });
+  if (reviews.length === 0) return {};
+
+  const lines = await prisma.orderLine.findMany({
+    where: { orderId: { in: reviews.map((review) => review.orderId) }, productId: { not: null } },
+    select: { orderId: true, productId: true },
+  });
+
+  return groupReviewsByProduct(
+    reviews.map((review) => ({ ...review, createdAt: review.createdAt.toISOString() })),
+    lines
+  );
+}
+
+/* ────────────────────────────────────────────────────── panel tarafı */
+
+/**
+ * Panelin okuduğu alanlar.
+ *
+ * Tek yerde duruyor çünkü listeyle iki yazma ucu (cevap, görünürlük) **aynı
+ * şekli** döndürmek zorunda: istemci gelen kaydı listedekinin yerine koyuyor,
+ * eksik bir alan o satırı ekranda sessizce fakirleştirirdi.
+ */
+const adminSelection = {
+  id: true,
+  /// Ürünleri çekmek için; panele gösterilmez.
+  orderId: true,
+  orderNo: true,
+  authorName: true,
+  foodRating: true,
+  deliveryRating: true,
+  comment: true,
+  reply: true,
+  repliedAt: true,
+  repliedBy: true,
+  published: true,
+  hiddenReason: true,
+  lang: true,
+  createdAt: true,
+} as const;
+
+/**
+ * Panel listesi.
+ *
+ * Her satırda siparişin **ürünleri** de gelir: "üç yıldız" tek başına
+ * cevaplanabilir bir bilgi değil, "neye üç yıldız" cevaplanabilir. Sipariş
+ * numarasına bakıp ayrı bir ekrandan siparişi bulmak, gün içinde onlarca
+ * yorumu gözden geçiren biri için yapılmayacak kadar uzun bir yol.
+ */
+export async function listReviewsForAdmin(take = 100) {
+  return attachItems(
+    await prisma.review.findMany({
+      orderBy: { createdAt: "desc" },
+      take,
+      select: adminSelection,
+    }),
+    ADMIN_ITEM_LIMIT
+  );
 }
 
 export type AdminReview = Awaited<ReturnType<typeof listReviewsForAdmin>>[number];
@@ -361,27 +531,13 @@ export async function replyToReview(
     data: reply
       ? { reply, repliedAt: new Date(), repliedBy: actor }
       : { reply: "", repliedAt: null, repliedBy: "" },
-    select: {
-      id: true,
-      orderNo: true,
-      authorName: true,
-      foodRating: true,
-      deliveryRating: true,
-      comment: true,
-      reply: true,
-      repliedAt: true,
-      repliedBy: true,
-      published: true,
-      hiddenReason: true,
-      lang: true,
-      createdAt: true,
-    },
+    select: adminSelection,
   });
 
   // Cevap sitede yorumun altında görünür: önbellek düşmezse beş dakika
   // boyunca cevapsız görünmeye devam eder.
   await invalidateReviews();
-  return updated;
+  return withAdminItems(updated);
 }
 
 /**
@@ -403,24 +559,18 @@ export async function setReviewVisibility(
   const updated = await prisma.review.update({
     where: { id },
     data: { published, hiddenReason: published ? "" : hiddenReason },
-    select: {
-      id: true,
-      orderNo: true,
-      authorName: true,
-      foodRating: true,
-      deliveryRating: true,
-      comment: true,
-      reply: true,
-      repliedAt: true,
-      repliedBy: true,
-      published: true,
-      hiddenReason: true,
-      lang: true,
-      createdAt: true,
-    },
+    select: adminSelection,
   });
 
   // Görünürlük değişimi hem listeyi hem de ortalamayı etkiler.
   await invalidateReviews();
-  return updated;
+  return withAdminItems(updated);
+}
+
+/** Tek kaydı panelin beklediği şekle getirir (liste ile aynı olsun diye). */
+async function withAdminItems<T extends { orderId: string }>(
+  row: T
+): Promise<T & { items: ReviewedItem[] }> {
+  const [withItems] = await attachItems([row], ADMIN_ITEM_LIMIT);
+  return withItems;
 }
