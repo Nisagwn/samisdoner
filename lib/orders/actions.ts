@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { prisma } from "@/lib/db";
 import { getCurrentCustomer } from "@/lib/account/guard";
 import { paymentProvider } from "@/lib/payments/stripe";
-import { checkThrottle, recordFailure, throttleKeys } from "@/lib/security/throttle";
+import { checkThrottle, pickClientIp, recordFailure, throttleKeys } from "@/lib/security/throttle";
 import { getOrderSettings } from "./availability";
 import { buildCheckoutQuote } from "./checkout";
 import { CouponUnavailableError, createOrder } from "./repository";
@@ -45,9 +45,7 @@ const PAYMENT_WINDOW_MINUTES = 31;
 /** Aynı IP'den arka arkaya sipariş denemesi sınırı (bkz. `lib/security/throttle`). */
 function clientIpFromHeaders(): string {
   const h = headers();
-  const forwarded = h.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return h.get("x-real-ip")?.trim() || "unknown";
+  return pickClientIp(h.get("x-real-ip"), h.get("x-forwarded-for"));
 }
 
 export async function createOrderAction(input: unknown): Promise<CreateOrderResult> {

@@ -28,11 +28,49 @@ export type ThrottleState =
   | { blocked: false }
   | { blocked: true; retryAfterSeconds: number };
 
-/** İstekten IP adresi. Ters vekil arkasında ilk değer gerçek istemcidir. */
+/**
+ * İstemci adresini başlıklardan seçer — **saf işlev**, bu yüzden sınanabilir.
+ *
+ * Sıra önemli ve eskiden yanlıştı. Önceki sürüm `X-Forwarded-For`'un İLK
+ * değerini alıyordu; o değer istemcinin kendi yazdığı bir değer olabilir:
+ *
+ *   Caddy gelen `X-Forwarded-For` başlığını SİLMEZ, kendi gördüğü adresi
+ *   sonuna EKLER (`trusted_proxies` ayarlanmadıkça — bkz. deploy/Caddyfile,
+ *   orada da yok). Yani saldırgan `X-Forwarded-For: 1.2.3.4` yollarsa
+ *   uygulamaya "1.2.3.4, <gerçek adres>" ulaşır ve ilk değer saldırganındır.
+ *
+ * Sonuç, her istekte başlığı değiştirerek **bütün hız sınırlarının**
+ * atlanabilmesiydi: panel girişi kaba kuvveti, müşteri girişi, kayıt, parola
+ * sıfırlama, sipariş oluşturma ve kupon kodu denemesi. Sayaç her seferinde
+ * yeni bir anahtara yazıldığı için hiçbir eşik dolmuyordu.
+ *
+ * Doğru kaynak `X-Real-IP`: ters vekil bunu her istekte kendi gördüğü soket
+ * adresiyle **ezer**, dolayısıyla istemci etkileyemez. Caddyfile bunu tam da
+ * bu amaçla yazıyor (`header_up X-Real-IP {remote_host}`); Vercel de aynı
+ * başlığı doldurur.
+ *
+ * `X-Forwarded-For` yalnızca yedek ve artık SON değer okunuyor: zincirin sonunu
+ * bize en yakın vekil yazar, başını isteyen yazabilir.
+ */
+export function pickClientIp(realIp: string | null, forwardedFor: string | null): string {
+  const real = realIp?.trim();
+  if (real) return real;
+
+  const chain = (forwardedFor ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (chain.length > 0) return chain[chain.length - 1];
+
+  return "unknown";
+}
+
+/** İstekten IP adresi. */
 export function clientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
+  return pickClientIp(
+    request.headers.get("x-real-ip"),
+    request.headers.get("x-forwarded-for")
+  );
 }
 
 /**
@@ -108,4 +146,10 @@ export const throttleKeys = {
    * bir müşteri kendini panele girişten de kilitlerdi.
    */
   orderIp: (ip: string) => `order:ip:${ip}`,
+  /**
+   * Kupon kodu denemesi. Sipariş sayacından ayrı: kodu yanlış yazan müşteri
+   * kendini sipariş vermekten kilitlememeli, kod deneyen bir betik de
+   * siparişin kotasını yiyerek fark edilmeden kalmamalı.
+   */
+  couponIp: (ip: string) => `coupon:ip:${ip}`,
 };

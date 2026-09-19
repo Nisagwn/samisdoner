@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/db";
 import { withDatabase } from "@/lib/security/dbGuard";
-import { checkThrottle, recordFailure, throttleKeys } from "@/lib/security/throttle";
+import { checkThrottle, pickClientIp, recordFailure, throttleKeys } from "@/lib/security/throttle";
 import {
   passwordResetConfirmSchema,
   passwordResetRequestSchema,
@@ -32,9 +32,7 @@ export const dynamic = "force-dynamic";
 
 function clientIp(): string {
   const h = headers();
-  const forwarded = h.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return h.get("x-real-ip")?.trim() || "unknown";
+  return pickClientIp(h.get("x-real-ip"), h.get("x-forwarded-for"));
 }
 
 export async function POST(request: Request) {
