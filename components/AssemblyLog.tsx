@@ -363,7 +363,7 @@ export default function AssemblyLog() {
                 setSoundOn((v) => !v);
               }}
               aria-pressed={soundOn}
-              className={`focus-ring tag border px-3 py-2 transition-colors ${
+              className={`focus-ring tag inline-flex min-h-[44px] items-center border px-3 transition-colors ${
                 soundOn ? "border-amber text-amber bg-amber/10" : "border-line text-smoke hover:border-smoke"
               }`}
             >
@@ -409,7 +409,7 @@ export default function AssemblyLog() {
                     <button
                       onClick={() => setOpenTip((v) => (v === step.code ? null : step.code))}
                       aria-expanded={openTip === step.code}
-                      className={`focus-ring tag whitespace-nowrap flex items-center gap-2 group bg-void/75 px-2 py-1 backdrop-blur-sm md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-none ${
+                      className={`focus-ring tag whitespace-nowrap flex min-h-[44px] items-center gap-2 group bg-void/75 px-2 backdrop-blur-sm md:bg-transparent md:px-0 md:backdrop-blur-none ${
                         step.from === "left" ? "" : "md:flex-row-reverse"
                       }`}
                     >

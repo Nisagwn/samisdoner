@@ -10,14 +10,13 @@
   /* Sabit header'ın yüksekliği.
      Sayfaya yapışan öğeler (karta sayfasının kategori şeridi) ve bağlantı
      hedefleri bu değeri kullanır, böylece navbarın altında kaybolmazlar.
-     Üstteki turuncu duyuru şeridi kaldırıldığı için değer küçüldü. */
-  --nav-h: 68px;
-}
 
-@media (min-width: 768px) {
-  :root {
-    --nav-h: 72px;
-  }
+     Hesap: `nav` dikey dolgusu 2 × 12 px (`py-3`) + en uzun çocuk 46 px
+     (44 px dokunma hedefi + 1 px çerçeve × 2) = 70 px; 2 px pay bırakıldı.
+     Değer artık tek: kırılım başına ayrı yükseklik verilmesinin sebebi
+     logonun `md`'de büyümesiydi (28 px), ama 44 px'lik kontroller her iki
+     kırılımda da ondan yüksek — iki farklı sayı tutmanın karşılığı kalmadı. */
+  --nav-h: 72px;
 }
 
 * {
