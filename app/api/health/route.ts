@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { cacheStatus } from "@/lib/cache";
+import { openingHoursBypassActive } from "@/lib/orders/availability";
 
 /**
  * Sağlık ucu — konteyner ve yük dengeleyici bunu okur.
@@ -30,8 +31,25 @@ export async function GET() {
 
   const healthy = database === "ready";
 
+  /* Yapılandırma uyarıları — durumu (200/503) DEĞİŞTİRMEZ.
+     Kasıtlı: bunlar arıza değil, "canlıda böyle kalmamalı" ayarları. 503
+     döndürmek, sağlıklı bir kabı Docker'a sürekli yeniden başlattırırdı. */
+  const warnings: string[] = [];
+  if (openingHoursBypassActive()) {
+    warnings.push(
+      "ORDERS_IGNORE_OPENING_HOURS acik: calisma saati kontrolu atlanıyor, " +
+        "dukkan kapaliyken de siparis alinip odeme cekilir."
+    );
+  }
+
   return NextResponse.json(
-    { status: healthy ? "ok" : "degraded", database, cache, time: new Date().toISOString() },
+    {
+      status: healthy ? "ok" : "degraded",
+      database,
+      cache,
+      ...(warnings.length > 0 ? { warnings } : {}),
+      time: new Date().toISOString(),
+    },
     { status: healthy ? 200 : 503, headers: { "Cache-Control": "no-store" } }
   );
 }
