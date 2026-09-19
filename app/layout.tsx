@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Unbounded, JetBrains_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import SmoothScroll from "@/components/SmoothScroll";
@@ -50,6 +50,34 @@ export const metadata: Metadata = {
     url: SITE_URL,
   },
   twitter: { card: "summary_large_image" },
+};
+
+/**
+ * Görüntü alanı — `viewport-fit=cover` burada bilinçli bir gereksinim.
+ *
+ * Next kendiliğinden yalnızca `width=device-width, initial-scale=1` yazar.
+ * `viewportFit: "cover"` **yazılmadığı sürece** iOS Safari güvenli alan
+ * değişkenlerini sıfır döndürür: `env(safe-area-inset-bottom)` = `0px`.
+ *
+ * Bu tek satırın eksikliği dört yerde sessizce hataya dönüşüyordu — hepsi
+ * ekranın en altına yapışan ve dolgusunu bu değişkenden alan kontroller:
+ *   - `CartBar`            mobil sepet çubuğu (ana CTA)
+ *   - `CartDrawer`         çekmecenin "Zur Kasse" düğmesi
+ *   - `CheckoutView`       yapışkan ödeme düğmesi
+ *   - `ProductDialog`      sepete ekle düğmesi
+ * Dolgu `max(0.75rem, env(...))` biçiminde yazıldığı için hata görünmez:
+ * değişken sıfır olunca sessizce 0.75rem'e düşer ve düğme iPhone'un ana ekran
+ * göstergesinin altında kalır. Yani kontroller doğru yazılmıştı, onları
+ * etkinleştiren beyan eksikti.
+ *
+ * `themeColor` gövdenin arka planıyla (`void`, #070604) aynı: tarayıcı kendi
+ * çubuğunu bu renge boyar, sayfanın karanlık teması adres çubuğunda kesilmez.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#070604",
 };
 
 const jsonLd = {

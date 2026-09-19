@@ -113,7 +113,7 @@ export default async function OrderTrackingPage({ params }: Params) {
     order.status === "CANCELLED" || order.status === "REJECTED" || order.status === "EXPIRED";
 
   return (
-    <main className="min-h-screen bg-void px-5 py-16 text-bone">
+    <main className="min-h-dvh bg-void px-5 py-16 text-bone">
       {/* Durum panelde değiştiğinde sayfa kendiliğinden tazelensin. */}
       {!failed && <AutoRefresh seconds={20} />}
       {/* Ödeme alınmış ama webhook ulaşmamışsa siparişi Stripe'a sorarak

@@ -23,7 +23,7 @@ export default async function AnmeldenPage() {
   if (await getCurrentCustomer()) redirect("/konto");
 
   return (
-    <main className="min-h-screen bg-void text-bone">
+    <main className="min-h-dvh bg-void text-bone">
       <Navbar />
       {/* useSearchParams istemci tarafında askıya alınabilir; Next bu sınırı ister. */}
       <Suspense fallback={null}>

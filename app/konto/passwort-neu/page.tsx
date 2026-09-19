@@ -27,7 +27,7 @@ export default function PasswortNeuPage({
   searchParams: { token?: string };
 }) {
   return (
-    <main className="min-h-screen bg-void text-bone">
+    <main className="min-h-dvh bg-void text-bone">
       <Navbar />
       <PasswordResetForm mode="confirm" token={searchParams.token ?? ""} />
       <Footer />

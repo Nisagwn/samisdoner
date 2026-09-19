@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 
 export default function impressumPage() {
   return (
-    <main className="min-h-screen bg-void text-bone">
+    <main className="min-h-dvh bg-void text-bone">
       <Navbar />
       <LegalDocument data={impressumData()} />
       <Footer />

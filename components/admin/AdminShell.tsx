@@ -237,7 +237,7 @@ export default function AdminShell({
   );
 
   return (
-    <div className="min-h-screen bg-void text-bone flex flex-col lg:flex-row">
+    <div className="min-h-dvh bg-void text-bone flex flex-col lg:flex-row">
       {/* mobil üst çubuk */}
       <header className="lg:hidden flex items-center justify-between gap-4 px-5 py-4 border-b border-line bg-char sticky top-0 z-40">
         <Link href="/admin" className="focus-ring font-display font-extrabold text-base">
