@@ -155,5 +155,12 @@ export function describeRejection(
       return f.couponBelowMinimum.replace("{amount}", formatCents(rejection.minOrderCents));
     case "coupon_no_items":
       return f.couponNoItems;
+    case "coupon_too_many_attempts":
+      // Kodun kendisi hakkında hiçbir şey söylenmez — sınırın amacı bu.
+      // Dakikaya yukarı yuvarlanır: "0 dakika sonra" diye bir bekleyiş yok.
+      return f.couponTooManyAttempts.replace(
+        "{minutes}",
+        String(Math.max(1, Math.ceil(rejection.retryAfterSeconds / 60)))
+      );
   }
 }

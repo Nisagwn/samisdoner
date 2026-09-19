@@ -402,6 +402,7 @@ export function CheckoutView() {
       case "coupon_wrong_fulfillment":
       case "coupon_below_minimum":
       case "coupon_no_items":
+      case "coupon_too_many_attempts":
         return describeRejection(error, t);
     }
   };

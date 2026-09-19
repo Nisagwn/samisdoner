@@ -94,7 +94,14 @@ export type CouponRejection =
   | { code: "coupon_wrong_fulfillment"; fulfillment: "DELIVERY" | "PICKUP" }
   | { code: "coupon_below_minimum"; minOrderCents: number; subtotalCents: number }
   /** Kod geçerli ama ürüne bağlı ve o ürünler sepette yok. */
-  | { code: "coupon_no_items" };
+  | { code: "coupon_no_items" }
+  /**
+   * Çok sayıda yanlış kod denendi; kod bu istekte hiç sorgulanmadı.
+   *
+   * Diğerlerinden farkı: bu ret kuponun kendisi hakkında **hiçbir şey
+   * söylemez**. Sebebi de bu — bkz. `app/api/menu/quote/route.ts`.
+   */
+  | { code: "coupon_too_many_attempts"; retryAfterSeconds: number };
 
 export type CouponEvaluation =
   | { ok: true; code: string; discountCents: number }
