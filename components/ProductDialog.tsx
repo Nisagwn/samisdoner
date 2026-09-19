@@ -19,6 +19,7 @@ import {
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import type { ProductReviewsResponse } from "@/app/api/menu/reviews/route";
 import { useScrollLock } from "@/lib/useScrollLock";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 import { Button, QtyStepper, TextArea } from "@/components/ui";
 import ProductBadges from "@/components/ProductBadges";
 import AllergenWarning from "@/components/legal/AllergenWarning";
@@ -66,10 +67,6 @@ type Props = {
   onSubmit: (draft: ProductDraft) => void;
 };
 
-/** Odak tuzağının hedef alabileceği elemanlar. */
-const FOCUSABLE =
-  'a[href], button:not([disabled]), textarea, input:not([disabled]), select, [tabindex]:not([tabindex="-1"])';
-
 export default function ProductDialog({ item, mode, initial, onClose, onSubmit }: Props) {
   const { t, lang } = useLanguage();
   const dialog = useRef<HTMLDivElement>(null);
@@ -98,40 +95,10 @@ export default function ProductDialog({ item, mode, initial, onClose, onSubmit }
     closeButton.current?.focus();
   }, []);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab") return;
-
-      const root = dialog.current;
-      if (!root) return;
-      const items = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-        (el) => el.offsetParent !== null
-      );
-      if (items.length === 0) return;
-
-      const first = items[0];
-      const last = items[items.length - 1];
-      const active = document.activeElement;
-
-      // Döngü elle kapatılır: pencere `position: fixed` olduğu için tarayıcı
-      // sıradaki odağı arkadaki menüde arar ve müşteri pencereden "düşer".
-      if (event.shiftKey && (active === first || !root.contains(active))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  // Escape kapatır, Tab pencerenin içinde döner; bkz. lib/useFocusTrap.ts.
+  // Bu pencere sepet çekmecesinin ÜSTÜNE de açılabiliyor (CartDrawer'daki
+  // "düzenle"), kanca o durumda hangi katmanın tuşu işleyeceğine karar verir.
+  useFocusTrap(true, dialog, onClose);
 
   const name = lang === "tr" ? item.nameTr ?? item.name : item.name;
   const desc = lang === "tr" ? item.descTr ?? item.desc : item.desc;
