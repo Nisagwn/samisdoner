@@ -30,7 +30,7 @@ export default async function AccountFrame({
   const summary = await getAccountSummary(customerId);
 
   return (
-    <main className="min-h-screen bg-void text-bone">
+    <main className="min-h-dvh bg-void text-bone">
       <Navbar />
       <AccountShell active={active} name={name} email={email} summary={summary}>
         {children}

@@ -14,7 +14,7 @@ export default function OrderLoading() {
   );
 
   return (
-    <main className="min-h-screen bg-void px-5 py-16 text-bone" aria-busy="true" aria-live="polite">
+    <main className="min-h-dvh bg-void px-5 py-16 text-bone" aria-busy="true" aria-live="polite">
       <span className="sr-only">Lädt …</span>
       <div className="mx-auto w-full max-w-2xl space-y-6">
         {bar("h-4 w-28")}

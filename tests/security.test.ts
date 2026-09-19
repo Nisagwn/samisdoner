@@ -12,6 +12,7 @@ import {
 } from "@/lib/account/password";
 import { hashToken } from "@/lib/account/passwordReset";
 import { parseCartLines, parseLang } from "@/lib/cartLines";
+import { pickClientIp } from "@/lib/security/throttle";
 
 /**
  * Güvenlik testleri.
@@ -263,5 +264,52 @@ describe("parola sıfırlama jetonu özeti", () => {
     // ve ikisinin de kaçış gerektirmemesi kayıt/arama yollarını basitleştirir.
     const hash = await hashToken("herhangi-bir-jeton-1234567890");
     expect(hash).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+});
+
+/* ══════════════════════════════════ hız sınırının dayandığı IP adresi */
+
+describe("istemci IP adresi", () => {
+  /*
+   * Bütün hız sınırları (panel girişi, müşteri girişi, kayıt, parola
+   * sıfırlama, sipariş, kupon kodu) sayacı bu adrese yazar. Adres
+   * istemcinin etkileyebildiği bir başlıktan okunursa sınır diye bir şey
+   * kalmaz: saldırgan her istekte başka bir değer yollar, her sayaç bir
+   * kere artar ve hiçbir eşik dolmaz.
+   */
+
+  it("ters vekilin yazdığı X-Real-IP tercih edilir", () => {
+    expect(pickClientIp("203.0.113.9", null)).toBe("203.0.113.9");
+  });
+
+  it("sahte X-Forwarded-For, gerçek X-Real-IP'yi gölgeleyemez", () => {
+    // Saldırgan "ben 1.2.3.4'üm" diyor; vekil gerçek adresi X-Real-IP'ye yazdı.
+    expect(pickClientIp("203.0.113.9", "1.2.3.4")).toBe("203.0.113.9");
+  });
+
+  it("X-Forwarded-For'da vekilin eklediği SON değer okunur", () => {
+    /*
+     * Caddy gelen başlığı silmez, sonuna ekler. Yani "1.2.3.4" istemcinin
+     * uydurması, "203.0.113.9" vekilin gördüğü gerçek adrestir. Eski kod
+     * ilk değeri alıyordu ve tam da bu yüzden atlatılabiliyordu.
+     */
+    expect(pickClientIp(null, "1.2.3.4, 203.0.113.9")).toBe("203.0.113.9");
+  });
+
+  it("tek vekilli normal istekte doğru adresi verir", () => {
+    expect(pickClientIp(null, "203.0.113.9")).toBe("203.0.113.9");
+  });
+
+  it("boş ve bozuk başlıklar 'unknown'a düşer", () => {
+    expect(pickClientIp(null, null)).toBe("unknown");
+    expect(pickClientIp("", "")).toBe("unknown");
+    expect(pickClientIp("   ", "  ,  ,  ")).toBe("unknown");
+  });
+
+  it("aynı saldırgan farklı uydurmalarla aynı anahtara düşer", () => {
+    // Vekil arkasında adres sabittir; başlığı değiştirmek sayacı bölemez.
+    const a = pickClientIp("203.0.113.9", "10.0.0.1");
+    const b = pickClientIp("203.0.113.9", "172.16.0.5");
+    expect(a).toBe(b);
   });
 });

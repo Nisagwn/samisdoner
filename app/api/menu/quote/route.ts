@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { parseCartLines, parseLang } from "@/lib/cartLines";
 import { buildCheckoutQuote } from "@/lib/orders/checkout";
 import { withDatabase } from "@/lib/security/dbGuard";
+import { checkThrottle, clientIp, recordFailure, throttleKeys } from "@/lib/security/throttle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,15 +63,52 @@ export async function POST(request: Request) {
     rawRequestedAt && !Number.isNaN(rawRequestedAt.getTime()) ? rawRequestedAt : null;
 
   return withDatabase(async () => {
+    /*
+     * Kupon kodu denemelerinin hız sınırı.
+     *
+     * Bu uç oturum istemiyor ve `couponRejection` alanında var olmayan kodu
+     * (`coupon_unknown`) var olandan ayırt edilebilir biçimde bildiriyor.
+     * İkisi bir araya gelince ortaya bir **kod sayacı** çıkıyor: bir betik
+     * sözlükten kod deneyip hangilerinin gerçek olduğunu öğrenebilir. Kodlar
+     * panelden elle yazılıyor ("SOMMER10" gibi), yani tahmin edilebilir.
+     *
+     * Sınır bilinçli olarak yalnızca **kod taşıyan** isteklere uygulanıyor:
+     * sepet her değiştiğinde bu uç çağrılıyor ve her çağrıyı saymak, normal
+     * alışverişi kilitlerdi.
+     *
+     * Sayaca yalnızca `coupon_unknown` yazılıyor. Var olan bir kodun başka
+     * sebeple reddi (asgari tutarın altı, yanlış teslim biçimi) müşterinin
+     * sepetini düzeltirken tekrar tekrar oluşur — onları saymak, elinde
+     * gerçek kuponu olan müşteriyi kilitlemek olurdu.
+     */
+    const couponKeys = [throttleKeys.couponIp(clientIp(request))];
+    const throttled = couponCode ? await checkThrottle(couponKeys) : { blocked: false as const };
+
     const quote = await buildCheckoutQuote({
       lines: parseCartLines(input.lines),
       lang: parseLang(input.lang),
       fulfillment,
       zip,
-      couponCode,
+      // Engelliyken kod veritabanına hiç sorulmaz: sınırın amacı tam olarak
+      // o sorgunun cevabını vermemek.
+      couponCode: throttled.blocked ? "" : couponCode,
       tipCents,
       requestedAt,
     });
+
+    if (throttled.blocked) {
+      return NextResponse.json({
+        ...quote,
+        couponRejection: {
+          code: "coupon_too_many_attempts",
+          retryAfterSeconds: throttled.retryAfterSeconds,
+        },
+      });
+    }
+
+    if (quote.couponRejection?.code === "coupon_unknown") {
+      await recordFailure(couponKeys);
+    }
 
     return NextResponse.json(quote);
   });

@@ -65,7 +65,7 @@ export default function Navbar() {
           üstünde duran parlak bir bant, sayfaya bakan gözün ilk gördüğü şey
           oluyordu. Aynı bilgi Konum bölümünde ve altbilgide duruyor. */}
 
-      <nav className="max-w-[1400px] mx-auto flex items-center justify-between gap-2 px-4 sm:px-6 md:px-10 py-4">
+      <nav className="max-w-[1400px] mx-auto flex items-center justify-between gap-2 px-4 sm:px-6 md:px-10 py-3">
         <Link href="/" className="focus-ring font-display font-extrabold text-base sm:text-lg md:text-xl tracking-tight text-bone shrink-0">
           SAMİ´S <span className="text-amber">//</span> DÖNER
         </Link>
@@ -96,10 +96,10 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {/* Language Switcher */}
-          <div className="flex items-center border border-line bg-char p-0.5 rounded-none">
+          <div className="flex items-center border border-line bg-char rounded-none">
             <button
               onClick={() => setLang("tr")}
-              className={`px-2 py-1 text-xs font-mono tracking-wider transition-colors ${
+              className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center px-2 text-xs font-mono tracking-wider transition-colors ${
                 lang === "tr" ? "bg-amber text-void font-bold" : "text-smoke hover:text-bone"
               }`}
               aria-label="Türkçe"
@@ -108,7 +108,7 @@ export default function Navbar() {
             </button>
             <button
               onClick={() => setLang("de")}
-              className={`px-2 py-1 text-xs font-mono tracking-wider transition-colors ${
+              className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center px-2 text-xs font-mono tracking-wider transition-colors ${
                 lang === "de" ? "bg-amber text-void font-bold" : "text-smoke hover:text-bone"
               }`}
               aria-label="Deutsch"
@@ -125,7 +125,7 @@ export default function Navbar() {
           <Link
             href="/konto"
             aria-label={t.nav.account}
-            className="focus-ring tag hidden sm:block border border-line text-smoke px-3 py-2 hover:border-amber hover:text-amber transition-colors"
+            className="focus-ring tag hidden min-h-[44px] items-center border border-line px-3 text-smoke transition-colors hover:border-amber hover:text-amber sm:inline-flex"
           >
             {t.nav.account}
           </Link>
@@ -134,7 +134,7 @@ export default function Navbar() {
           <button
             onClick={openCart}
             aria-label={`${t.nav.cart} — ${t.nav.cartItemCount.replace("{count}", String(count))}`}
-            className="focus-ring relative tag border border-amber text-amber px-2.5 sm:px-3 md:px-4 py-2 hover:bg-amber hover:text-void transition-colors"
+            className="focus-ring relative tag inline-flex min-h-[44px] items-center justify-center border border-amber px-2.5 text-amber transition-colors hover:bg-amber hover:text-void sm:px-3 md:px-4"
           >
             {t.nav.cart}
             {count > 0 && (
@@ -147,7 +147,7 @@ export default function Navbar() {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMobileOpen((v) => !v)}
-            className="lg:hidden focus-ring tag border border-line text-smoke p-2 hover:border-amber transition-colors"
+            className="lg:hidden focus-ring tag inline-flex min-h-[44px] min-w-[44px] items-center justify-center border border-line text-smoke transition-colors hover:border-amber"
             aria-label={t.nav.menu}
             aria-expanded={mobileOpen}
           >
@@ -168,7 +168,7 @@ export default function Navbar() {
                     href={l.href}
                     onClick={() => setMobileOpen(false)}
                     aria-current={active ? "page" : undefined}
-                    className={`block border-l-2 py-1 pl-3 text-sm transition-colors ${
+                    className={`flex min-h-[44px] items-center border-l-2 pl-3 text-sm transition-colors ${
                       active
                         ? "border-amber text-amber"
                         : "border-transparent text-bone hover:text-amber"
@@ -189,7 +189,7 @@ export default function Navbar() {
                   setLang("tr");
                   setMobileOpen(false);
                 }}
-                className={`px-3 py-1 text-xs font-mono border ${
+                className={`inline-flex min-h-[44px] items-center justify-center px-3 text-xs font-mono border ${
                   lang === "tr" ? "border-amber text-amber bg-amber/10" : "border-line text-smoke"
                 }`}
               >
@@ -200,7 +200,7 @@ export default function Navbar() {
                   setLang("de");
                   setMobileOpen(false);
                 }}
-                className={`px-3 py-1 text-xs font-mono border ${
+                className={`inline-flex min-h-[44px] items-center justify-center px-3 text-xs font-mono border ${
                   lang === "de" ? "border-amber text-amber bg-amber/10" : "border-line text-smoke"
                 }`}
               >

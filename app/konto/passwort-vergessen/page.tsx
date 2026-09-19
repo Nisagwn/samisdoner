@@ -22,7 +22,7 @@ export default async function PasswortVergessenPage() {
   if (await getCurrentCustomer()) redirect("/konto/einstellungen");
 
   return (
-    <main className="min-h-screen bg-void text-bone">
+    <main className="min-h-dvh bg-void text-bone">
       <Navbar />
       <PasswordResetForm mode="request" />
       <Footer />

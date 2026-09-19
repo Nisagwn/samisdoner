@@ -14,7 +14,7 @@ export default function CheckoutLoading() {
   );
 
   return (
-    <div className="min-h-screen bg-void pt-[var(--nav-h)]" aria-busy="true" aria-live="polite">
+    <div className="min-h-dvh bg-void pt-[var(--nav-h)]" aria-busy="true" aria-live="polite">
       <span className="sr-only">Lädt …</span>
       <div className="mx-auto grid max-w-6xl gap-8 px-5 py-10 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">

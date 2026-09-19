@@ -19,6 +19,18 @@
 # pencere yok.
 set -eu
 
+# Boru hattında SOLDAKİ komutun hatası da sayılsın.
+#
+# Bu satır olmadan `pg_dump | gzip` yalnızca gzip'in çıkış kodunu döndürürdü;
+# pg_dump yarıda ölse bile gzip eline geçeni sorunsuz sıkıştırıp 0 ile çıkar.
+# Sonuç sessiz bir felaketti: yarım döküm "başarılı" sayılır, `gzip -t`
+# sınavını da geçer (gzip akışı gerçekten sağlamdır), kalıcı adını alır, makine
+# dışına kopyalanır ve "son başarılı yedek" damgası tazelenir — yani bayatlık
+# alarmı da susar. Arıza günü geri yüklenen şey yarım bir veritabanı olurdu.
+#
+# `postgres:16-alpine` içindeki BusyBox ash bunu destekler (denendi).
+set -o pipefail
+
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
 INTERVAL="${BACKUP_INTERVAL_SECONDS:-86400}"
 # Son başarılı yedekten sonra bu süre geçtiyse günlüğe hata düşer.
@@ -102,8 +114,23 @@ while true; do
 	if pg_dump -h postgres -U doner -d doner --no-owner --clean --if-exists \
 		| gzip -9 >"${TARGET}.partial"; then
 
-		# Bütünlük sınavı: gzip akışı sonuna kadar okunabiliyor mu.
-		if gzip -t "${TARGET}.partial" 2>/dev/null; then
+		# Bütünlük sınavı iki aşamalı ve ikisi FARKLI şeyi sınar:
+		#   1. `gzip -t` — sıkıştırma akışı sonuna kadar okunabiliyor mu.
+		#   2. Dökümün son satırları — pg_dump işini bitirebilmiş mi.
+		# Birincisi tek başına yetmez: yarıda kesilmiş bir döküm de kusursuz
+		# bir gzip dosyasıdır, çünkü bozulan gzip değil kaynaktır. pg_dump
+		# ancak başarıyla bitirdiğinde "dump complete" satırını yazar.
+		#
+		# `grep -q` bilinçli olarak kullanılmıyor: ilk eşleşmede çıkıp
+		# `tail`'e SIGPIPE gönderir ve pipefail açıkken bu, sağlam bir yedeği
+		# başarısız saydırırdı.
+		dump_tail="$(gunzip -c "${TARGET}.partial" | tail -20)"
+		case "$dump_tail" in
+		*"PostgreSQL database dump complete"*) dump_complete=1 ;;
+		*) dump_complete=0 ;;
+		esac
+
+		if [ "$dump_complete" = 1 ] && gzip -t "${TARGET}.partial" 2>/dev/null; then
 			mv "${TARGET}.partial" "${TARGET}"
 			log "tamam: ${TARGET} ($(du -h "${TARGET}" | cut -f1))"
 
@@ -112,7 +139,7 @@ while true; do
 			fi
 		else
 			rm -f "${TARGET}.partial"
-			log "HATA: yedek bozuk çıktı (gzip doğrulaması geçmedi), atıldı"
+			log "HATA: yedek eksik ya da bozuk çıktı (bütünlük sınavı geçmedi), atıldı"
 		fi
 	else
 		rm -f "${TARGET}.partial"

@@ -565,6 +565,7 @@ export const trTranslations = {
     couponBelowMinimum: "Bu kod {amount} ve üzeri siparişlerde geçerli.",
     couponGone: "Bu kodun son kullanım hakkı az önce tükendi. Kodu kaldırıp tekrar deneyin.",
     couponNoItems: "Bu kodun geçerli olduğu ürünler sepetinizde yok.",
+    couponTooManyAttempts: "Çok fazla kod denendi. Lütfen {minutes} dakika sonra tekrar deneyin.",
     campaignGone:
       "Sepetinizdeki bir kampanya az önce sona erdi. Tutar güncellendi; lütfen kontrol edip yeniden onaylayın.",
 

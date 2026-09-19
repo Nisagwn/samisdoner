@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import { lineKey, useCart, type CartLine } from "@/lib/cart";
 import { formatCents } from "@/lib/money";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { Button, QtyStepper } from "@/components/ui";
 import { useScrollLock } from "@/lib/useScrollLock";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 import { thresholdProgress } from "@/lib/menu/progress";
 import ProductDialog, { type ProductDraft } from "@/components/ProductDialog";
 import type { MenuStatus } from "@/app/api/menu/status/route";
@@ -54,6 +55,7 @@ export default function CartDrawer() {
 
   const [status, setStatus] = useState<MenuStatus | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
 
   /** Düzenlenmekte olan satır ve onun ürün tarifi; ikisi birlikte gelir. */
   const [editing, setEditing] = useState<{ line: CartLine; item: MenuItem } | null>(null);
@@ -86,15 +88,16 @@ export default function CartDrawer() {
   // Çekmece açıkken arkadaki sayfa kaymaz; bkz. lib/useScrollLock.ts.
   useScrollLock(isOpen);
 
+  // Açılınca odak içeri alınır: kapatma düğmesi, çekmecenin ilk durağı.
   useEffect(() => {
     if (!isOpen) return;
     closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeCart();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [isOpen, closeCart]);
+  }, [isOpen]);
+
+  /* Escape kapatır, Tab çekmecenin içinde döner; bkz. lib/useFocusTrap.ts.
+     Daha önce yalnızca Escape dinleniyordu: `aria-modal="true"` yazılı olduğu
+     hâlde Tab odağı arkadaki menüye taşıyordu. */
+  useFocusTrap(isOpen, drawerRef, closeCart);
 
   /*
    * İşletme durumu çekmece açıldığında yüklenir.
@@ -187,6 +190,17 @@ export default function CartDrawer() {
     router.push("/checkout");
   };
 
+  /* Kapalı çekmece DOM'da kalır — kapanma animasyonu (`translate-x-full`)
+     ancak böyle çalışır. Ama ekranın dışında durması onu erişilemez yapmıyordu:
+     kapatma, adet, kaldır ve "Zur Kasse" düğmeleri klavyeyle sırayla
+     geziliyordu ve `role="dialog" aria-modal="true"` ekran okuyucuya sepet
+     kapalıyken de "açık pencere" diyordu. İki nitelik bunu kapatır:
+     `inert` odağı ve işaretçiyi keser, `aria-hidden` erişilebilirlik
+     ağacından çıkarır. Açıkken ikisi de yazılmaz. */
+  const closedProps = (
+    isOpen ? {} : { inert: "", "aria-hidden": true }
+  ) as HTMLAttributes<HTMLDivElement>;
+
   return (
     <>
       <div
@@ -198,9 +212,11 @@ export default function CartDrawer() {
       />
 
       <div
+        ref={drawerRef}
         role="dialog"
         aria-modal="true"
         aria-label={t.cart.title}
+        {...closedProps}
         /* duration-300: Tailwind ölçeğinde 400 yok — eski `duration-400`
            hiçbir sınıf üretmiyordu ve çekmece 150 ms'de kayıyordu. */
         className={`ember-surface fixed right-0 top-0 z-[71] flex h-[100dvh] w-full max-w-[420px] flex-col border-l border-line shadow-[-28px_0_80px_rgba(0,0,0,0.45)] transition-transform duration-300 ease-out ${

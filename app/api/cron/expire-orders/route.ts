@@ -18,18 +18,22 @@ import { reconcileStalePendingOrders } from "@/lib/orders/reconcile";
  * Koruma **zorunludur**: `CRON_SECRET` tanımlı değilse uç hiç çalışmaz. Açık
  * bırakılan bir yönetim ucu, herkesin sipariş kapatabildiği bir düğmedir.
  *
- * Zamanlama `vercel.json` dosyasında tanımlıdır. Vercel isteğe
- * `Authorization: Bearer $CRON_SECRET` başlığını kendisi ekler; aynı başlıkla
- * elle de çağrılabilir:
+ * Çağıran taraf `Authorization: Bearer $CRON_SECRET` başlığını yollar; elle de
+ * çağrılabilir:
  *   curl -H "Authorization: Bearer $CRON_SECRET" .../api/cron/expire-orders
  *
- * **Aralık ödeme penceresinden (31 dk) çok uzun: günde bir (03:00).** Vercel
- * Hobby planı daha sıksını çalıştırmıyor. Bu yüzden bu uç tek başına yeterli
- * değildir ve olması da beklenmez: müşterinin kendi takip sayfası ödemeyi
- * `/api/orders/sync` üzerinden yokluyor ve `reconcileOrderPayment` ödemesiz
- * kalmış siparişi penceresi kapandığı anda kapatıyor. Buradaki tarama, o yolu
- * hiç kullanmayan siparişler (sekmesini hiç açmayan müşteri) için ağdır.
- * Plan ücretli sürüme geçerse zamanlama tekrar 15 dakikaya çekilebilir.
+ * ZAMANLAMA — iki dağıtım, iki aralık:
+ *  - **Docker (canlı olan bu).** `docker-compose.prod.yml` içindeki `cron`
+ *    servisi **15 dakikada bir** çağırır; orada bir plan sınırı yok. Ödeme
+ *    penceresi 31 dk olduğu için bu aralık taramayı gerçekten yeterli kılar.
+ *  - Vercel. `vercel.json` günde bir (03:00) tanımlar — Hobby planı daha
+ *    sıksına izin vermiyor. O dağıtımda bu uç tek başına yetmez.
+ *
+ * Her iki durumda da tarama tek savunma değil: müşterinin takip sayfası
+ * ödemeyi `/api/orders/sync` üzerinden yokluyor ve `reconcileOrderPayment`
+ * ödemesiz kalmış siparişi penceresi kapandığı anda kapatıyor. Buradaki
+ * tarama, o yolu hiç kullanmayan siparişler (sekmesini hiç açmayan müşteri)
+ * için ağdır.
  */
 
 export const runtime = "nodejs";

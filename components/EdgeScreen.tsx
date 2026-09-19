@@ -32,7 +32,7 @@ export function EdgeScreen({
   const { t } = useLanguage();
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-void px-5 py-24 text-bone">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-void px-5 py-24 text-bone">
       <div className="w-full max-w-lg">
         <p className="tag mb-3 text-flame">{tag}</p>
         <h1 className="section-title mb-4 font-display font-extrabold text-bone">{title}</h1>

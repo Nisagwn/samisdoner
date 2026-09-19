@@ -39,12 +39,28 @@ const TIME_ZONE = "Europe/Berlin";
  * Bu yüzden her atlamada sunucu günlüğüne uyarı düşer.
  */
 function openingHoursBypassed(): boolean {
-  if (process.env.ORDERS_IGNORE_OPENING_HOURS !== "true") return false;
+  if (!openingHoursBypassActive()) return false;
   console.warn(
     "[siparis] ORDERS_IGNORE_OPENING_HOURS acik: calisma saati kontrolu atlandi. " +
       "Canliya cikmadan once bu degiskeni kaldirin.",
   );
   return true;
+}
+
+/**
+ * Kaçamağın açık olup olmadığı — **günlüğe hiçbir şey yazmadan**.
+ *
+ * `/api/health` bunu okuyup `warnings` alanında bildiriyor. Uyarının yalnızca
+ * sunucu günlüğünde durması yetmiyordu: canlıda günlüğe kimse bakmıyor ve
+ * değişken açık kaldığında ortaya çıkan şey "gece 03:00'te alınmış ödeme"
+ * oluyor. İzlenen bir uçtan okunabilmesi, unutmayı yakalanabilir bir hataya
+ * çevirir.
+ *
+ * Ayrı bir işlev olmasının sebebi günlük gürültüsü: sağlık ucu birkaç saniyede
+ * bir yoklanıyor, `openingHoursBypassed()` her çağrıda uyarı yazıyor.
+ */
+export function openingHoursBypassActive(): boolean {
+  return process.env.ORDERS_IGNORE_OPENING_HOURS === "true";
 }
 
 /**

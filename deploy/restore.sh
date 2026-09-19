@@ -41,13 +41,24 @@ echo "Yedek: $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
 # Bozuk bir arşivi canlı veritabanına dökmeye başlamak, elde kalan son sağlam
 # durumu da bozar. Önce sınanır.
 gzip -t "$ARCHIVE" || { echo "Arşiv bozuk, geri yükleme yapılmadı." >&2; exit 1; }
-echo "Arşiv bütünlüğü: tamam"
+
+# gzip sınavı yalnızca sıkıştırmanın sağlamlığını söyler, dökümün TAM olduğunu
+# söylemez: yarıda kesilmiş bir pg_dump da kusursuz bir gzip dosyasıdır.
+# pg_dump bu satırı ancak işini bitirdiğinde yazar.
+if ! gunzip -c "$ARCHIVE" | tail -20 | grep -q "PostgreSQL database dump complete"; then
+	echo "Arşiv EKSİK (pg_dump tamamlanmamış), geri yükleme yapılmadı." >&2
+	exit 1
+fi
+echo "Arşiv bütünlüğü: tamam (gzip + döküm sonu)"
 
 if [ "$DRY_RUN" = true ]; then
 	echo "--- deneme (geçici veritabanına yükleniyor, canlıya dokunulmuyor) ---"
 	$COMPOSE exec -T postgres psql -U doner -d postgres -c 'DROP DATABASE IF EXISTS restore_test;'
 	$COMPOSE exec -T postgres psql -U doner -d postgres -c 'CREATE DATABASE restore_test;'
-	gunzip -c "$ARCHIVE" | $COMPOSE exec -T postgres psql -q -U doner -d restore_test >/dev/null
+	# ON_ERROR_STOP=1 şart: psql varsayılanda hatalı bir ifadeden sonra DEVAM
+	# eder ve yine de 0 ile çıkar. Onsuz "deneme tamam" yazısı, aslında yarım
+	# yüklenmiş bir veritabanının üzerine basılırdı.
+	gunzip -c "$ARCHIVE" | $COMPOSE exec -T postgres psql -q -v ON_ERROR_STOP=1 -U doner -d restore_test >/dev/null
 	echo "--- yüklenen satır sayıları ---"
 	$COMPOSE exec -T postgres psql -U doner -d restore_test -c \
 		'SELECT (SELECT count(*) FROM "Product") AS urun, (SELECT count(*) FROM "Order") AS siparis, (SELECT count(*) FROM "Category") AS kategori;'
@@ -67,7 +78,9 @@ echo "Uygulama durduruluyor (yükleme sırasında yazma olmasın)…"
 $COMPOSE stop app
 
 echo "Geri yükleniyor…"
-gunzip -c "$ARCHIVE" | $COMPOSE exec -T postgres psql -q -U doner -d doner
+# ON_ERROR_STOP=1: hata anında dur. Panik gününde en kötü sonuç, sessizce yarım
+# yüklenmiş bir veritabanının üzerine "Bitti" yazılmasıdır.
+gunzip -c "$ARCHIVE" | $COMPOSE exec -T postgres psql -q -v ON_ERROR_STOP=1 -U doner -d doner
 
 echo "Uygulama başlatılıyor…"
 $COMPOSE start app

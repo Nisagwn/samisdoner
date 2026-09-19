@@ -33,7 +33,7 @@ export default async function AdminLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-5 py-16 bg-void">
+    <div className="min-h-dvh flex items-center justify-center px-5 py-16 bg-void">
       <LoginForm mode={mode} />
     </div>
   );

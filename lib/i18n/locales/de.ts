@@ -569,6 +569,7 @@ export const deTranslations: Translations = {
     couponGone:
       "Dieser Code wurde soeben zum letzten Mal eingelöst. Bitte entfernen Sie ihn und bestellen Sie erneut.",
     couponNoItems: "Dieser Code gilt für Artikel, die nicht in Ihrem Warenkorb sind.",
+    couponTooManyAttempts: "Zu viele Code-Versuche. Bitte versuchen Sie es in {minutes} Minuten erneut.",
     campaignGone:
       "Eine Aktion in Ihrem Warenkorb ist soeben ausgelaufen. Der Betrag wurde aktualisiert — bitte prüfen und erneut bestätigen.",
 
