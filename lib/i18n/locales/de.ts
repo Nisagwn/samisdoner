@@ -27,6 +27,7 @@ export const deTranslations: Translations = {
     reviews: "Bewertungen",
     news: "News",
     cart: "Warenkorb",
+    backToTop: "Nach oben",
   },
   hero: {
     eyebrowTag: "Sami´s Döner // Straßkirchen",
