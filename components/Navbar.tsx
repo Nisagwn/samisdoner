@@ -19,6 +19,13 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  const scrollToTop = () => {
+    const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth";
+    window.scrollTo({ top: 0, behavior });
+  };
+
   /*
    * Gezinme.
    *
@@ -209,6 +216,17 @@ export default function Navbar() {
             </div>
           </div>
         </div>
+      )}
+
+      {scrolled && (
+        <button
+          type="button"
+          onClick={scrollToTop}
+          aria-label={t.nav.backToTop}
+          className="focus-ring fixed bottom-5 right-4 z-50 inline-flex min-h-[44px] min-w-[44px] items-center justify-center border border-amber bg-void/90 px-3 text-lg text-amber shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm transition-colors hover:bg-amber hover:text-void sm:bottom-6 sm:right-6"
+        >
+          ↑
+        </button>
       )}
     </header>
   );

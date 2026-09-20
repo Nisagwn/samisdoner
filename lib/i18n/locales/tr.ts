@@ -23,6 +23,7 @@ export const trTranslations = {
     reviews: "Değerlendirmeler",
     news: "Haberler",
     cart: "Sepet",
+    backToTop: "Başa dön",
   },
   hero: {
     eyebrowTag: "Sami´s Döner // Straßkirchen",
